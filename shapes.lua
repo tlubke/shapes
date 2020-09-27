@@ -6,32 +6,18 @@
 -- graph.
 --
 -- enc1: change focused shape
--- enc2: +/- res. focused shape
+-- enc2: spin all shapes
 -- enc3: spin focused shape
 --
--- key1: remove selected shape
--- key2: start/stop spinning
--- key2 HOLD: reset all shapes
--- key3: add shape in 2 steps
+-- key1: edit selected shape
+-- key2: delete focused shape
+-- key2 HOLD: stop and reset angle of all shapes
+-- key3: create new shape
 --  ^
 -- -1. enc2: X pos, enc3: Y pos
 -- -2. enc2: shape, enc3: size
 --    -key2: move back a step
 --    -key3: advance a step
-
-
-
---[[ to do list:
-                      -pick an engine to use
-                      -make enc2 function
-                      -a way to distinguish which line-based shape is focused (i.e. blinking) or reduce level of all other shapes
-                      -make any new shapes random
-                      -CV control when crow is released
---]]
-
-
-
-engine.name = "TestSine"
 
 
 
@@ -41,54 +27,47 @@ engine.name = "TestSine"
 
 
 
+-- includes
+local shape = include "lib/shape"
+
 -- local variables
 -- modes and various states of being
-local mode = 0                        -- mode 0: not-adding, mode 1: adding
-local submode = 0                     -- s/m 0: nothing, s/m 1: first-step, s/m 2: second step
-local spinning = true                 -- based on metro/count
+local mode = "PLAY"
+local submode = "NONE"
+local left_icon_text = "del"
+local right_icon_text = "add"
+local spinning = true
 
--- shape variables
-local shapes = {}
-local defShape = {}
-local focus = 0       -- the currently focused item
+shapes = {}
+default_shape = shape:new({x = 0, y = 0}, 2, 0, 4, 0) -- default shape is square
+local focused_shape = nil
 
--- a grid table for easy coordinates
-  -- lowercase x/y refer to their screen position
-  -- capital X/Y refer to their coordinate relative to the grid
-local x = {}
-local y = {}
+local out_1 = 0
+local out_2 = 0
+local out_3 = 0
+local out_4 = 0
 
--- clocking variables
-local position = 0
-local counter = nil
+local avg_x_1 = 0.0
+local avg_x_2 = 0.0
+local avg_x_3 = 0.0
+local avg_x_4 = 0.0
 
-
+local avg_y_1 = 0.0
+local avg_y_2 = 0.0
+local avg_y_3 = 0.0
+local avg_y_4 = 0.0
 
 function init()
-  -- set up the default shape
-  defShape.r = 16
-  defShape.a = 0
-  defShape.p = 4
-  defShape.s = 0
-  defShape.f = true
-
-  -- set up the grid table
-  for i = -8, 8 do
-    x[i] = (i * 8 + 64)
+  for i=1, 4 do
+    crow.output[i].volts = 0
+    crow.output[i].slew = 0.0099
   end
-  for i = -4, 4 do
-    y[i] = (i * -8 + 32)
-  end
-
-  -- metronome setup
-  counter = metro.alloc()
-  counter.time = 1/30 -- the "fps"
-  counter.count = -1
-  counter.callback = count
-  counter:start()
-
-  -- initial draw
-  redraw()
+  
+  voltage_refresh = metro.init(tick, 1/100, -1)
+  voltage_refresh:start()
+  
+  screen_refresh  = metro.init(function(c) redraw(c) end, 1/30, -1)
+  screen_refresh:start()
 end
 
 
@@ -100,141 +79,141 @@ end
 
 
 function enc(n,d)
-  local ct = tab.count(shapes)
-
-  --print("enc: " .. n .. " mode " ..  mode .. " submode " .. submode .. " shape " .. focus .. " of " .. ct)
-
-  if focus <= 0 then return end
-  if focus > ct then return end
-
-  if mode == 0 then
+  if focused_shape == nil then return end
+  ----------
+  -- PLAY
+  ----------
+  if     mode == "PLAY" then
+    
     if n == 1 then
-      if d > 0 then 
-        focus = focus + 1
-      elseif d < 0 then
-        focus = focus - 1
+      focus_next(d)
+    elseif n == 2 then
+      for _, shp in pairs(shapes) do
+        shp.s = shp.s + d
       end
-      
-      focus = util.clamp(focus, 1, ct)
-      refocus()
-      redraw()
     elseif n == 3 then
-      shapes[focus].s = shapes[focus].s + d
+      focused_shape.s = focused_shape.s + d
     end
-  else
-    -- must be mode 1...
-    if submode == 1 then
-      if n == 2 then
-        if d > 0 then 
-          shapes[focus].X = shapes[focus].X + 1
-        elseif d < 0 then 
-          shapes[focus].X = shapes[focus].X - 1
-        end
-        
-        shapes[focus].X = util.clamp(shapes[focus].X, -8, 8)
-        redraw()
+  --------------
+  -- EDIT/CREATE
+  --------------
+  elseif mode == "EDIT" or mode == "CREATE" then
+  
+    if     submode == "POSITION" then
+      if     n == 1 then
+        -- nothing
+      elseif n == 2 then
+        focused_shape.c.x = util.clamp(focused_shape.c.x + d, -5, 5)
       elseif n == 3 then
-        if d > 0 then 
-          shapes[focus].Y = shapes[focus].Y - 1
-        elseif d < 0 then 
-          shapes[focus].Y = shapes[focus].Y + 1
-        end
-
-        shapes[focus].Y = util.clamp(shapes[focus].Y, -4, 4)
-        redraw()
+        focused_shape.c.y = util.clamp(focused_shape.c.y - d, -5, 5)
       end
-      print("enc result: X = " .. shapes[focus].X .. " Y = " .. shapes[focus].Y)
-    elseif submode == 2 then
-      if n == 2 then
-        shapes[focus].p = shapes[focus].p + d
-        shapes[focus].p = util.clamp(shapes[focus].p, 1, 5)
-        redraw()
+    elseif submode == "SIZE" then
+      if     n == 1 then
+        -- nothing
+      elseif n == 2 then
+        focused_shape.r = util.clamp(focused_shape.r + d, 1, 10)
       elseif n == 3 then
-        shapes[focus].r = shapes[focus].r + d
-        shapes[focus].r = util.clamp(shapes[focus].r, 2, 40)
-        redraw()
+        focused_shape.p = util.clamp(focused_shape.p + d, 1, 4)
       end
-      print("enc result: p = " .. shapes[focus].p .. " r = " .. shapes[focus].r)
     end
+    
   end
 end
 
 function key(n,z)
-  local cnt = tab.count(shapes)
   if z == 0 then return end
 
-  if mode == 0 then
-    if n == 1 then
-      if (cnt > 0) and (focus > 0) then
-        table.remove(shapes, focus)
-        refocus()
-        redraw()
-      end
-    elseif n == 2 then
-      if spinning then
-        counter:stop()
-        spinning = false
-        redraw()
-      else
-        counter:start()
-        spinning = true
-        -- doesn't need redraw() because that happens while counter is active
-      end
-    elseif n == 3 then
-      mode = 1
-      submode = 1
-
-      local tmpTable = cloneTable(defShape)
-      tmpTable.X = 0
-      tmpTable.Y = 0
-      table.insert(shapes, tmpTable)
-
-      focus = tab.count(shapes)
-      -- print("Focus: " .. focus)
-      -- tab.print(shapes[focus])
-      refocus()
-      redraw()
-    end
-  else
+  ----------
+  -- PLAY
+  ----------
+  if     mode == "PLAY" then
     
-    -- must be mode == 1
-    -- undo!
-    if submode == 2 then
-      if n == 2 then
-        mode = 1
-        submode = 1
-        return
+    if n == 1 and focused_shape then
+      mode    = "EDIT"
+      submode = "POSITION"
+    elseif n == 2 then
+      if #shapes < 1 then return end
+      mode    = "DELETE?"
+      submode = "NONE"
+      left_icon_text = "no"
+      right_icon_text = "yes"
+    elseif n == 3 then
+      mode    = "CREATE"
+      submode = "POSITION"
+      right_icon_text = "next"
+      left_icon_text = "undo"
+      new_shape = default_shape:clone()
+      table.insert(shapes, #shapes + 1, new_shape)
+      focused_shape = new_shape
+    end
+  ------------
+  -- EDIT
+  ------------
+  elseif mode == "EDIT" then
+  
+    if     submode == "POSITION" then
+      if     n == 1 then
+        -- nothing
+      elseif n == 2 then
+        -- go back to playmode, undo any changes
+      elseif n == 3 then
+        submode = "SIZE"
+        left_icon_text = "back"
       end
-    elseif submode == 1 then
-      if n == 2 then 
-        mode = 0
-        submode = 0
-        if (cnt > 0) and (focus > 0) then
-          table.remove(shapes, focus)
-          refocus()
-          redraw()
-        end
-        return
+    elseif submode == "SIZE" then
+      if     n == 1 then
+        -- nothing
+      elseif n == 2 then
+        submode = "POSITION"
+        right_icon_text = "next"
+        left_icon_text = "undo"
+      elseif n == 3 then
+        play_mode()
       end
     end
-
-    -- keep going!
-    if submode == 1 then
-      if n == 3 then
-        submode = 2
-        redraw()
+  ----------
+  -- CREATE
+  ----------
+  elseif mode == "CREATE" then
+  
+    if     submode == "POSITION" then
+      if     n == 1 then
+        -- nothing
+      elseif n == 2 then
+        delete_focused()
+        play_mode()
+      elseif n == 3 then
+        submode = "SIZE"
+        left_icon_text = "back"
       end
-    else
-      if n == 3 then
-        -- defShape = cloneTable(shapes[focus]) #clones the most recent shape
-        mode = 0
-        submode = 0
-        redraw()
+    elseif submode == "SIZE" then
+      if     n == 1 then
+        -- nothing
+      elseif n == 2 then
+        submode = "POSITION"
+        right_icon_text = "next"
+        left_icon_text = "undo"
+      elseif n == 3 then
+        play_mode()
       end
     end
+  ----------
+  -- CONFIRM
+  ----------
+  elseif mode == "DELETE?" then
+    
+    if     n == 1 then
+      -- nothing
+    elseif n == 2 then
+      play_mode()
+    elseif n == 3 then
+      delete_focused()
+      play_mode()
+    end
+  
   end
-
-  print("mode: " .. mode .. " submode: " .. submode .. " focus: " .. focus)
+  
+  print("mode: "..mode.." submode: "..submode)
 end
 
 
@@ -245,39 +224,65 @@ end
 
 
 
-function count(c)
-  local cnt = tab.count(shapes)
-  call_x = {}
-  call_y = {}
-
-  for i = 1, cnt do
-    shapes[i].a = shapes[i].a + (shapes[i].s / 100)
+function tick()
+  local x_values = {
+    {n = 0, sum = 0},
+    {n = 0, sum = 0},
+    {n = 0, sum = 0},
+    {n = 0, sum = 0}
+  }
+  
+  local y_values = {
+    {n = 0, sum = 0},
+    {n = 0, sum = 0},
+    {n = 0, sum = 0},
+    {n = 0, sum = 0}
+  }
+  
+  for _, shp in pairs(shapes) do
+    shp.a = shp.a + (shp.s / 1000)
     
-    -- calling the values of each point
-    -- call_x[n][1] = X coordinate, call_x[n][2~points + 1] = coordinates of each point on shape
-      -- all point 1s, point 2s, etc. are added together and returned to audio engine.
-    call_x[i], call_y[i] = polygon(
-      shapes[i].X,
-      shapes[i].Y,
-      shapes[i].r,
-      shapes[i].a,
-      shapes[i].p,
-      false -- fill, irrelevant here.
-      )
+    local xs, ys = shp:values()
+    for j = 1, #xs do
+      if xs[j] <= 5 and xs[j] >= -5 then
+        x_values[j].n = x_values[j].n + 1
+        x_values[j].sum = x_values[j].sum + xs[j]
+      end
+    end
+    for j = 1, #ys do
+      if ys[j] <= 5 and ys[j] >= -5 then
+        y_values[j].n = y_values[j].n + 1
+        y_values[j].sum = y_values[j].sum + ys[j]
+      end
+    end
   end
   
-  for i = 1, cnt do -- for as many shapes
-    call_x[1][2] = call_x[1][2] + call_x[i][2] -- add together their first point
-    -- this would be done for all 5 points, which would each have a respective parameter.
-  end
+  avg_x_1 = x_values[1].sum / x_values[1].n
+  avg_x_2 = x_values[2].sum / x_values[2].n
+  avg_x_3 = x_values[3].sum / x_values[3].n
+  avg_x_4 = x_values[4].sum / x_values[4].n
   
-  -- audio test
-  if cnt <= 0 then return
-  else
-    engine.hz(call_x[1][2] * 27.5 + 222)
-  end
+  avg_y_1 = y_values[1].sum / y_values[1].n
+  avg_y_2 = y_values[2].sum / y_values[2].n
+  avg_y_3 = y_values[3].sum / y_values[3].n
+  avg_y_4 = y_values[4].sum / y_values[4].n
   
-  redraw()
+  crow.output[1].volts = avg_x_1
+  crow.output[2].volts = avg_x_2
+  crow.output[3].volts = avg_x_3
+  crow.output[4].volts = avg_x_4
+  
+  --[[ clamp values to -5,5? Or if it is out side grid, don't count?
+  avg_x_1 = util.clamp(x_values[1].sum / x_values[1].n, -5, 5)
+  avg_x_2 = util.clamp(x_values[2].sum / x_values[2].n, -5, 5)
+  avg_x_3 = util.clamp(x_values[3].sum / x_values[3].n, -5, 5)
+  avg_x_4 = util.clamp(x_values[4].sum / x_values[4].n, -5, 5)
+  
+  avg_y_1 = util.clamp(y_values[1].sum / y_values[1].n, -5, 5)
+  avg_y_2 = util.clamp(y_values[2].sum / y_values[2].n, -5, 5)
+  avg_y_3 = util.clamp(y_values[3].sum / y_values[3].n, -5, 5)
+  avg_y_4 = util.clamp(y_values[4].sum / y_values[4].n, -5, 5)
+  --]]
 end
 
 
@@ -288,96 +293,91 @@ end
 
 
 
-function refocus()
-  local cnt = tab.count(shapes)
-
-  -- if nothing left, zero it out
-  if (cnt < 1)  then
-    focus = 0
-    return
-  end
-
-  -- if too low, choose the first
-  if (focus < 1) then
-    focus = 1
-  end
-
-  -- if too high, choose the last
-  if (focus > cnt) then
-    focus = cnt
-  end
-
-  for i=1, cnt do
-    --print("checking " .. i .. " against " .. focus)
-    if (focus == i) then
-      shapes[i].f = true
-    else
-      shapes[i].f = false
-    end
-  end
-
-  --print("focus set to " .. focus)
+function map_x(n)
+  return n * 6 + 95.5
 end
 
-function redraw()
-  local cnt = tab.count(shapes)
+function map_y(n)
+  return n * (-6) + 31.5
+end
 
-  -- draw grid
+function play_mode()
+  mode    = "PLAY"
+  submode = "NONE"
+  left_icon_text  = "del"
+  right_icon_text = "add"
+end
+
+function focus_next(d)
+  local k = tab.key(shapes, focused_shape)
+  if k then
+    focused_shape = shapes[util.clamp(k + d, 1, #shapes)]
+  end
+end
+
+function delete_focused()
+  local k = tab.key(shapes, focused_shape)
+  if k then
+    table.remove(shapes, k)
+    focused_shape = shapes[util.clamp(k - 1, 1, #shapes)]
+  end
+end
+
+function format_voltage(n)
+  if     n ~= n then
+    return "+_.__v" -- NaN
+  elseif n >= 0 then
+    return string.format("+%.02fv", n)
+  else
+    return string.format("%.02fv", n)
+  end
+end
+
+function redraw(c)
+  local blink = ((c or 0) % 5) == 0
+  
   screen.clear()
-  screen.aa(0)
-  gridlay(16,0,0)
+  
+  draw_bipolar_grid()
+
+  screen.aa(1)
   screen.level(15)
-
-  screen.aa(1)      -- shapes are aa but everything else is not
-  for i=1, cnt do
-    polygon(
-      x[shapes[i].X],
-      y[shapes[i].Y],
-      shapes[i].r,
-      shapes[i].a,
-      shapes[i].p,
-      shapes[i].f
-    )
+  for _, shp in pairs(shapes) do
+    if blink and shp == focused_shape then
+      -- don't draw
+    else
+      shp:draw(map_x, map_y)
+    end
   end
-
-  screen.stroke()
   screen.aa(0)
   
-  -- pause symbole
-  if not spinning then
-      screen.rect(117,53,2,6)
-      screen.rect(120,53,2,6)
-      screen.fill()
-  end
+  -- blackout left side
+  screen.level(0)
+  screen.rect(0,0,64,64)
+  screen.fill()
   
-  -- indicators for mode 1
-  if mode == 1 then
-    
-    -- creating a black background, so numbers can't be covered.
-    screen.level(0) 
-    screen.rect(0,0,15,7)
-    if submode == 1 then
-      screen.rect(104,0,24,7)
-    else
-      screen.rect(112,0,24,7)
-    end
-    screen.fill()
-    
-    -- the numbers, top left and right corners.
-    screen.level(15)
-    screen.font_size(7)
-    screen.font_face(1)
-    screen.move(0,7)
-    screen.text(submode.."/2")
-    screen.font_size(7)
-    screen.font_face(1)
-    screen.move(128,7)
-    if submode == 1 then
-      screen.text_right("("..shapes[focus].X.." , "..shapes[focus].Y..")")
-    else
-      screen.text_right("r = "..shapes[focus].r)
-    end
-  end
+  -- (x, y)
+  screen.level(15)
+  screen.font_face(2)
+  screen.move(0, 8)
+  screen.text("1: ("..format_voltage(avg_x_1)..","..format_voltage(avg_y_1)..")")
+  screen.move(0, 16)
+  screen.text("2: ("..format_voltage(avg_x_2)..","..format_voltage(avg_y_2)..")")
+  screen.move(0, 24)
+  screen.text("3: ("..format_voltage(avg_x_3)..","..format_voltage(avg_y_3)..")")
+  screen.move(0, 32)
+  screen.text("4: ("..format_voltage(avg_x_4)..","..format_voltage(avg_y_4)..")")
+  
+  -- mode banner
+  screen.rect(0,35, 58, 10)
+  screen.fill()
+  screen.level(0)
+  screen.move(29, 43)
+  screen.text_center(mode)
+  screen.level(15)
+  
+  draw_left_icon()
+  draw_right_icon()
   
   screen.update()
 end
@@ -390,126 +390,63 @@ end
 
 
 
-function gridlay(div,shiftx,shifty)
-
-  local div = div            -- number of divisions, only powers of 4 divide cleanly
-  local size = (128/div)    -- space between gridlines
-  local shiftx = shiftx
-  local shifty = shifty
-
-    screen.line_width(1)    -- vertical gridlay
-    for i = 1, div do
-      screen.move(i * size+shiftx, 0)
-      screen.line_rel(0,64)
-      if i < div/2 then
-          screen.level(i)
-        else
-          screen.level(div-i)
-      end
-     screen.stroke()
-    end
-
-    screen.level(7)         -- vertical centerline
-    screen.line_width(1)
-    screen.move(64,0)
-    screen.line_rel(0,64)
-    screen.stroke()
-
-    screen.line_width(1)    -- horizontal gridlay
-    for i = 1, div/2 do
-      screen.move(0, i*size+shifty)
-      screen.line_rel(128,0)
-      if i < div/4 then
-          screen.level(i*2)
-        else
-          screen.level(div-i*2)
-      end
-      screen.stroke()
-    end
-
-    screen.level(15)        -- horizontal centerline
-    screen.line_width(1)
-    screen.move(0,32)
-    screen.line_rel(128,0)
-    screen.stroke()
-
-    screen.level(0)
-      screen.move(0,31)
-      screen.line_rel(128,0)
-      screen.move(0,33)
-      screen.line_rel(128,0)
-      screen.move(63,0)
-      screen.line_rel(0,64)
-      screen.move(65,0)
-      screen.line_rel(0,64)
-      screen.stroke()
-
-    screen.level(10)        -- center square
-    screen.rect(62,30,3,3)
-    screen.fill()
-
-end
-
-function polygon(cx, cy, radius, angle, points, fill)
-	local radius = radius
-	local angle = angle
-	local points = points
-	local fill = fill
-	local adjustX = 0
-	local adjustY = 0
-	local x = {}
-	local y = {}
-
-	x[1] = cx
-	y[1] = cy
-
-	for i = 1, points + 1 do
-		x[i+1] = x[1] + (radius * math.cos(angle + (i+i-1)*math.pi / points ))
-		y[i+1] = y[1] + (radius * math.sin(angle + (i+i-1)*math.pi / points ))
-	end
+function draw_bipolar_grid()
+  screen.line_width(1)
   
-	if points == 1 then
-	  screen.move(x[1],y[1])
-	else
-	  screen.move(x[2],y[2])
-		  for i = 3, points + 1 do
-		    -- ifs slighty adjustment shapes to make them appear more inline with the grid
-		    if i % 3 >= 1 then
-		      adjustX = -1
-		    else adjustX = 0
-		    end
-		    if i % 3 <= 1 then
-		      adjustY = -1
-		    else
-		      adjustY = 0
-		    end
-			  screen.line(x[i] + adjustX, y[i] + adjustY)
-		  end
-	end
-	screen.line(x[2],y[2])
-	screen.close()
-	if (fill) then
-	  if points <= 2 then
-	    -- do nothing.
-	  else
-	  screen.fill()
-	  end
-	end
-	screen.stroke()
-return x,y end
-
-
-
--- -------------------
--- Utility functions
--- -------------------
-
-
-
-function cloneTable(fromTable)
-  local toTable = {}
-  for orig_key, orig_value in pairs(fromTable) do
-    toTable[orig_key] = orig_value
+  for i=1, 5 do
+    from_center = (i*6)
+    
+    -- x axis lines
+    screen.move(64, 32 - from_center)
+    screen.line_rel(63, 0)
+    screen.move(64, 32 + from_center)
+    screen.line_rel(63, 0)
+    
+    -- y axis lines
+    screen.move(96 - from_center, 0)
+    screen.line_rel(0, 63)
+    screen.move(96 + from_center, 0)
+    screen.line_rel(0, 63)
+    
+    screen.level(11 - (i*2))
+    screen.stroke()
   end
-  return toTable
+  
+  screen.level(15)
+  
+  -- x/y center lines
+  screen.move(64, 32)
+  screen.line_rel(63, 0)
+  screen.move(96, 0)
+  screen.line_rel(0, 63)
+  screen.stroke()
+  
+  -- box around center line
+  screen.rect(94, 30, 3, 3)
+  screen.fill()
+  
+  -- box around grid
+  screen.rect(65,1, 62, 62)
+  screen.stroke()
 end
+
+function draw_left_icon()
+  if #shapes == 0 then
+    screen.level(1)
+  else
+    screen.level(15)
+  end
+  screen.rect(1, 48, 27, 15)
+  screen.stroke()
+  screen.move(14, 58)
+  screen.text_center(left_icon_text or "TEST")
+end
+
+function draw_right_icon()
+  screen.level(15)
+  screen.rect(31, 48, 27, 15)
+  screen.stroke()
+  screen.move(44,58)
+  screen.text_center(right_icon_text or "TEST")
+end
+
