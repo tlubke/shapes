@@ -34,7 +34,7 @@ function shape:values()
   return xs, ys
 end
   
-function shape:draw(map_x, map_y)
+function shape:draw(map_x, map_y, brightness, show_numbers)
   local center = {x = map_x(self.c.x), y = map_y(self.c.y)}
   local radius = self.r * 6
   local angle  = self.a
@@ -51,14 +51,23 @@ function shape:draw(map_x, map_y)
 	if points == 1 then
 	  screen.move(center.x, center.y)
 	else
-	  screen.move(xs[1],ys[1])
 	  for i = 2, points do
+	    screen.move(xs[i-1],ys[i-1])
 		  screen.line(xs[i], ys[i])
 	  end
+	  screen.move(xs[points], ys[points])
 	end
 	screen.line(xs[1],ys[1])
 	screen.close()
 	
+	if show_numbers then
+	  for i = 1, points do
+	    screen.move(xs[i], ys[i])
+	    screen.text(i)
+	  end
+	end
+	
+	screen.level(brightness)
 	screen.stroke()
 end
   

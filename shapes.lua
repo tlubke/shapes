@@ -1,23 +1,21 @@
 -- Shapes
--- visual based sound manipulator/LFO
+-- visual based modulation source
 --
 -- parameters are influenced by
 -- each point's position on the
 -- graph.
 --
 -- enc1: change focused shape
--- enc2: spin all shapes
+-- enc2: resize focused shape
 -- enc3: spin focused shape
 --
 -- key1: edit selected shape
 -- key2: delete focused shape
--- key2 HOLD: stop and reset angle of all shapes
 -- key3: create new shape
---  ^
--- -1. enc2: X pos, enc3: Y pos
--- -2. enc2: shape, enc3: size
---    -key2: move back a step
---    -key3: advance a step
+--
+-- HOLD
+-- key2 + enc2: resize all shapes
+-- key3 + enc3: spin all shapes
 
 
 
@@ -33,29 +31,56 @@ local shape = include "lib/shape"
 -- local variables
 -- modes and various states of being
 local mode = "PLAY"
-local submode = "NONE"
 local left_icon_text = "del"
 local right_icon_text = "add"
-local spinning = true
 
-shapes = {}
-default_shape = shape:new({x = 0, y = 0}, 2, 0, 4, 0) -- default shape is square
+local shapes = {}
+local default_shape = shape:new({x = 0, y = 0}, 2, 0, 4, 0) -- default shape is square
+local partial_shape = nil
 local focused_shape = nil
+local position_before_move = nil
 
-local out_1 = 0
-local out_2 = 0
-local out_3 = 0
-local out_4 = 0
+local x_values = {
+  {n = 0, sum = 0},
+  {n = 0, sum = 0},
+  {n = 0, sum = 0},
+  {n = 0, sum = 0}
+}
+  
+local y_values = {
+  {n = 0, sum = 0},
+  {n = 0, sum = 0},
+  {n = 0, sum = 0},
+  {n = 0, sum = 0}
+}
 
-local avg_x_1 = 0.0
-local avg_x_2 = 0.0
-local avg_x_3 = 0.0
-local avg_x_4 = 0.0
+local x_1 = 0/0
+local x_2 = 0/0
+local x_3 = 0/0
+local x_4 = 0/0
 
-local avg_y_1 = 0.0
-local avg_y_2 = 0.0
-local avg_y_3 = 0.0
-local avg_y_4 = 0.0
+local y_1 = 0/0
+local y_2 = 0/0
+local y_3 = 0/0
+local y_4 = 0/0
+
+function output_avg_x(i)
+  crow.output[i].volts = x_values[i].sum / x_values[i].n
+end
+
+function output_avg_y(i)
+  crow.output[i].volts = y_values[i].sum / y_values[i].n
+end
+
+local output_modes = {
+  output_avg_x,
+  output_avg_y
+}
+
+local input_state = {
+  key   = {0, 0, 0},
+  key_t = {0, 0, 0}
+}
 
 function init()
   for i=1, 4 do
@@ -68,6 +93,11 @@ function init()
   
   screen_refresh  = metro.init(function(c) redraw(c) end, 1/30, -1)
   screen_refresh:start()
+  
+  params:add_option("out_1", "output mode 1:", {"avg. of x's", "avg. of y's"}, 2)
+  params:add_option("out_2", "output mode 2:", {"avg. of x's", "avg. of y's"}, 2)
+  params:add_option("out_3", "output mode 3:", {"avg. of x's", "avg. of y's"}, 2)
+  params:add_option("out_4", "output mode 4:", {"avg. of x's", "avg. of y's"}, 2)
 end
 
 
@@ -79,7 +109,6 @@ end
 
 
 function enc(n,d)
-  if focused_shape == nil then return end
   ----------
   -- PLAY
   ----------
@@ -88,132 +117,138 @@ function enc(n,d)
     if n == 1 then
       focus_next(d)
     elseif n == 2 then
-      for _, shp in pairs(shapes) do
-        shp.s = shp.s + d
+      if input_state.key[n] == 1 then
+        for _, shp in pairs(shapes) do
+          shp.r = util.clamp(shp.r + d, 1, 10)
+        end
+      else
+        focused_shape.r = util.clamp(focused_shape.r + d, 1, 10)
       end
     elseif n == 3 then
-      focused_shape.s = focused_shape.s + d
+      if input_state.key[n] == 1 then
+        for _, shp in pairs(shapes) do
+          shp.s = shp.s + d
+        end
+      else
+        focused_shape.s = focused_shape.s + d
+      end
     end
-  --------------
-  -- EDIT/CREATE
-  --------------
-  elseif mode == "EDIT" or mode == "CREATE" then
+  --------
+  -- MOVE
+  --------
+  elseif mode == "MOVE" then
   
-    if     submode == "POSITION" then
-      if     n == 1 then
-        -- nothing
-      elseif n == 2 then
-        focused_shape.c.x = util.clamp(focused_shape.c.x + d, -5, 5)
-      elseif n == 3 then
-        focused_shape.c.y = util.clamp(focused_shape.c.y - d, -5, 5)
-      end
-    elseif submode == "SIZE" then
-      if     n == 1 then
-        -- nothing
-      elseif n == 2 then
-        focused_shape.r = util.clamp(focused_shape.r + d, 1, 10)
-      elseif n == 3 then
-        focused_shape.p = util.clamp(focused_shape.p + d, 1, 4)
-      end
+    if     n == 1 then
+      -- nothing
+    elseif n == 2 then
+      focused_shape.c.x = util.clamp(focused_shape.c.x + d, -5, 5)
+    elseif n == 3 then
+      focused_shape.c.y = util.clamp(focused_shape.c.y - d, -5, 5)
+    end
+  ---------
+  -- CREATE
+  ---------
+  elseif mode == "PLACE" then
+    
+    if     n == 1 then
+      -- nothing
+    elseif n == 2 then
+      partial_shape.c.x = util.clamp(partial_shape.c.x + d, -5, 5)
+    elseif n == 3 then
+      partial_shape.c.y = util.clamp(partial_shape.c.y - d, -5, 5)
+    end
+    
+  elseif mode == "SHAPE" then
+    
+    if     n == 1 then
+      -- nothing
+    elseif n == 2 then
+      partial_shape.r = util.clamp(partial_shape.r + d, 1, 10)
+    elseif n == 3 then
+      partial_shape.p = util.clamp(partial_shape.p + d, 1, 4)
     end
     
   end
 end
 
 function key(n,z)
-  if z == 0 then return end
-
+  input_state.key[n] = z
+  
+  if z == 1 then
+    -- record time of press
+    input_state.key_t[n] = util.time()
+    return 
+  else
+    -- ignore held releases
+    if util.time() - input_state.key_t[n] > 0.5 then
+      return
+    end
+  end
+  
   ----------
   -- PLAY
   ----------
   if     mode == "PLAY" then
     
     if n == 1 and focused_shape then
-      mode    = "EDIT"
-      submode = "POSITION"
+      start_move()
     elseif n == 2 then
       if #shapes < 1 then return end
-      mode    = "DELETE?"
-      submode = "NONE"
-      left_icon_text = "no"
-      right_icon_text = "yes"
+      start_delete()
     elseif n == 3 then
-      mode    = "CREATE"
-      submode = "POSITION"
-      right_icon_text = "next"
-      left_icon_text = "undo"
-      new_shape = default_shape:clone()
-      table.insert(shapes, #shapes + 1, new_shape)
-      focused_shape = new_shape
+      start_create()
     end
   ------------
-  -- EDIT
+  -- MOVE
   ------------
-  elseif mode == "EDIT" then
+  elseif mode == "MOVE" then
   
-    if     submode == "POSITION" then
-      if     n == 1 then
-        -- nothing
-      elseif n == 2 then
-        -- go back to playmode, undo any changes
-      elseif n == 3 then
-        submode = "SIZE"
-        left_icon_text = "back"
-      end
-    elseif submode == "SIZE" then
-      if     n == 1 then
-        -- nothing
-      elseif n == 2 then
-        submode = "POSITION"
-        right_icon_text = "next"
-        left_icon_text = "undo"
-      elseif n == 3 then
-        play_mode()
-      end
+    if     n == 1 then
+      -- nothing
+    elseif n == 2 then
+      undo_move()
+    elseif n == 3 then
+      finish_move()
     end
   ----------
   -- CREATE
   ----------
-  elseif mode == "CREATE" then
+  elseif mode == "PLACE" then
   
-    if     submode == "POSITION" then
-      if     n == 1 then
-        -- nothing
-      elseif n == 2 then
-        delete_focused()
-        play_mode()
-      elseif n == 3 then
-        submode = "SIZE"
-        left_icon_text = "back"
-      end
-    elseif submode == "SIZE" then
-      if     n == 1 then
-        -- nothing
-      elseif n == 2 then
-        submode = "POSITION"
-        right_icon_text = "next"
-        left_icon_text = "undo"
-      elseif n == 3 then
-        play_mode()
-      end
+    if     n == 1 then
+      -- nothing
+    elseif n == 2 then
+      undo_create()
+    elseif n == 3 then
+      mode = "SHAPE"
+      left_icon_text = "back"
+    end
+    
+  elseif mode == "SHAPE" then
+    
+    if     n == 1 then
+      -- nothing
+    elseif n == 2 then
+      mode = "PLACE"
+      right_icon_text = "next"
+      left_icon_text = "undo"
+    elseif n == 3 then
+      finish_create()
     end
   ----------
-  -- CONFIRM
+  -- DELETE
   ----------
   elseif mode == "DELETE?" then
     
     if     n == 1 then
       -- nothing
     elseif n == 2 then
-      play_mode()
+      undo_delete()
     elseif n == 3 then
-      delete_focused()
-      play_mode()
+      finish_delete()
     end
   
   end
-  
-  print("mode: "..mode.." submode: "..submode)
 end
 
 
@@ -225,20 +260,8 @@ end
 
 
 function tick()
-  local x_values = {
-    {n = 0, sum = 0},
-    {n = 0, sum = 0},
-    {n = 0, sum = 0},
-    {n = 0, sum = 0}
-  }
-  
-  local y_values = {
-    {n = 0, sum = 0},
-    {n = 0, sum = 0},
-    {n = 0, sum = 0},
-    {n = 0, sum = 0}
-  }
-  
+  reset_x_values()
+  reset_y_values()
   for _, shp in pairs(shapes) do
     shp.a = shp.a + (shp.s / 1000)
     
@@ -257,32 +280,20 @@ function tick()
     end
   end
   
-  avg_x_1 = x_values[1].sum / x_values[1].n
-  avg_x_2 = x_values[2].sum / x_values[2].n
-  avg_x_3 = x_values[3].sum / x_values[3].n
-  avg_x_4 = x_values[4].sum / x_values[4].n
+  x_1 = x_values[1].sum / x_values[1].n
+  x_2 = x_values[2].sum / x_values[2].n
+  x_3 = x_values[3].sum / x_values[3].n
+  x_4 = x_values[4].sum / x_values[4].n
   
-  avg_y_1 = y_values[1].sum / y_values[1].n
-  avg_y_2 = y_values[2].sum / y_values[2].n
-  avg_y_3 = y_values[3].sum / y_values[3].n
-  avg_y_4 = y_values[4].sum / y_values[4].n
-  
-  crow.output[1].volts = avg_x_1
-  crow.output[2].volts = avg_x_2
-  crow.output[3].volts = avg_x_3
-  crow.output[4].volts = avg_x_4
-  
-  --[[ clamp values to -5,5? Or if it is out side grid, don't count?
-  avg_x_1 = util.clamp(x_values[1].sum / x_values[1].n, -5, 5)
-  avg_x_2 = util.clamp(x_values[2].sum / x_values[2].n, -5, 5)
-  avg_x_3 = util.clamp(x_values[3].sum / x_values[3].n, -5, 5)
-  avg_x_4 = util.clamp(x_values[4].sum / x_values[4].n, -5, 5)
-  
-  avg_y_1 = util.clamp(y_values[1].sum / y_values[1].n, -5, 5)
-  avg_y_2 = util.clamp(y_values[2].sum / y_values[2].n, -5, 5)
-  avg_y_3 = util.clamp(y_values[3].sum / y_values[3].n, -5, 5)
-  avg_y_4 = util.clamp(y_values[4].sum / y_values[4].n, -5, 5)
-  --]]
+  y_1 = y_values[1].sum / y_values[1].n
+  y_2 = y_values[2].sum / y_values[2].n
+  y_3 = y_values[3].sum / y_values[3].n
+  y_4 = y_values[4].sum / y_values[4].n
+
+  output_modes[params:get("out_1")](1)
+  output_modes[params:get("out_2")](2)
+  output_modes[params:get("out_3")](3)
+  output_modes[params:get("out_4")](4)
 end
 
 
@@ -299,13 +310,6 @@ end
 
 function map_y(n)
   return n * (-6) + 31.5
-end
-
-function play_mode()
-  mode    = "PLAY"
-  submode = "NONE"
-  left_icon_text  = "del"
-  right_icon_text = "add"
 end
 
 function focus_next(d)
@@ -333,9 +337,97 @@ function format_voltage(n)
   end
 end
 
+function reset_x_values()
+  for _, v in pairs(x_values) do
+    v.n = 0
+    v.sum = 0
+  end
+end
+
+function reset_y_values()
+  for _, v in pairs(y_values) do
+    v.n = 0
+    v.sum = 0
+  end
+end
+
+
+
+--------
+-- STATE
+--------
+
+
+
+function play_mode()
+  mode = "PLAY"
+  left_icon_text  = "del"
+  right_icon_text = "add"
+end
+
+function start_move()
+  mode = "MOVE"
+  left_icon_text  = "undo"
+  right_icon_text = "done"
+  position_before_move = { x = focused_shape.c.x, y = focused_shape.c.y }
+end
+
+function undo_move()
+  focused_shape.c = position_before_move
+  play_mode()
+end
+
+function finish_move()
+  position_before_move = nil
+  play_mode()
+end
+
+function start_create()
+  mode = "PLACE"
+  left_icon_text  = "undo"
+  right_icon_text = "next"
+  partial_shape = default_shape:clone()
+end
+
+function undo_create()
+  partial_shape = nil
+  play_mode()
+end
+
+function finish_create()
+  table.insert(shapes, partial_shape)
+  focused_shape = partial_shape
+  partial_shape = nil
+  play_mode()
+end
+
+function start_delete()
+  mode = "DELETE?"
+  left_icon_text  = "no"
+  right_icon_text = "yes"
+end
+
+function undo_delete()
+  play_mode()
+end
+
+function finish_delete()
+  delete_focused()
+  play_mode()
+end
+
+
+
+-- ----------------------------------
+-- drawing functions
+-- ----------------------------------
+
+
+
 function redraw(c)
-  local blink = ((c or 0) % 5) == 0
-  
+  local show_numbers_on_focus = true
+  if partial_shape then show_numbers_on_focus = false end
+    
   screen.clear()
   
   draw_bipolar_grid()
@@ -343,30 +435,40 @@ function redraw(c)
   screen.aa(1)
   screen.level(15)
   for _, shp in pairs(shapes) do
-    if blink and shp == focused_shape then
+    if shp == focused_shape then
       -- don't draw
     else
-      shp:draw(map_x, map_y)
+      shp:draw(map_x, map_y, 15)
     end
+  end
+  if focused_shape then
+    focused_shape:draw(map_x, map_y, 6 + (c % 6), show_numbers_on_focus)
+  end
+  if partial_shape then
+    partial_shape:draw(map_x, map_y, c % 16, not show_numbers_on_focus)
   end
   screen.aa(0)
   
-  -- blackout left side
+  -- black outline around grid
   screen.level(0)
-  screen.rect(0,0,64,64)
+  screen.rect(64,-1,64,65)
+  screen.stroke()
+  
+  -- blackout left half
+  screen.rect(0, 0, 64, 64)
   screen.fill()
   
   -- (x, y)
   screen.level(15)
   screen.font_face(2)
   screen.move(0, 8)
-  screen.text("1: ("..format_voltage(avg_x_1)..","..format_voltage(avg_y_1)..")")
+  screen.text("1: ("..format_voltage(x_1)..","..format_voltage(y_1)..")")
   screen.move(0, 16)
-  screen.text("2: ("..format_voltage(avg_x_2)..","..format_voltage(avg_y_2)..")")
+  screen.text("2: ("..format_voltage(x_2)..","..format_voltage(y_2)..")")
   screen.move(0, 24)
-  screen.text("3: ("..format_voltage(avg_x_3)..","..format_voltage(avg_y_3)..")")
+  screen.text("3: ("..format_voltage(x_3)..","..format_voltage(y_3)..")")
   screen.move(0, 32)
-  screen.text("4: ("..format_voltage(avg_x_4)..","..format_voltage(avg_y_4)..")")
+  screen.text("4: ("..format_voltage(x_4)..","..format_voltage(y_4)..")")
   
   -- mode banner
   screen.rect(0,35, 58, 10)
@@ -381,14 +483,6 @@ function redraw(c)
   
   screen.update()
 end
-
-
-
--- ----------------------------------
--- drawing functions
--- ----------------------------------
-
-
 
 function draw_bipolar_grid()
   screen.line_width(1)
@@ -408,11 +502,11 @@ function draw_bipolar_grid()
     screen.move(96 + from_center, 0)
     screen.line_rel(0, 63)
     
-    screen.level(11 - (i*2))
+    screen.level(1)
     screen.stroke()
   end
   
-  screen.level(15)
+  screen.level(3)
   
   -- x/y center lines
   screen.move(64, 32)
@@ -425,13 +519,15 @@ function draw_bipolar_grid()
   screen.rect(94, 30, 3, 3)
   screen.fill()
   
+  screen.level(15)
+  
   -- box around grid
   screen.rect(65,1, 62, 62)
   screen.stroke()
 end
 
 function draw_left_icon()
-  if #shapes == 0 then
+  if #shapes == 0 and partial_shape == nil then
     screen.level(1)
   else
     screen.level(15)
