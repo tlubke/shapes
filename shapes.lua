@@ -9,7 +9,7 @@
 -- enc2: resize focused shape
 -- enc3: spin focused shape
 --
--- key1: edit selected shape
+-- key1: move focused shape
 -- key2: delete focused shape
 -- key3: create new shape
 --
@@ -31,8 +31,8 @@ local shape = include "lib/shape"
 -- local variables
 -- modes and various states of being
 local mode = "PLAY"
-local left_icon_text = "del"
-local right_icon_text = "add"
+local left_icon_text = "DEL"
+local right_icon_text = "ADD"
 
 local shapes = {}
 local default_shape = shape:new({x = 0, y = 0}, 2, 0, 4, 0) -- default shape is square
@@ -178,6 +178,8 @@ function key(n,z)
     -- record time of press
     input_state.key_t[n] = util.time()
     return 
+  elseif n == 1 then
+    -- don't ignore held release of key 1
   else
     -- ignore held releases
     if util.time() - input_state.key_t[n] > 0.5 then
@@ -221,7 +223,7 @@ function key(n,z)
       undo_create()
     elseif n == 3 then
       mode = "SHAPE"
-      left_icon_text = "back"
+      left_icon_text = "BACK"
     end
     
   elseif mode == "SHAPE" then
@@ -230,8 +232,8 @@ function key(n,z)
       -- nothing
     elseif n == 2 then
       mode = "PLACE"
-      right_icon_text = "next"
-      left_icon_text = "undo"
+      right_icon_text = "NEXT"
+      left_icon_text = "UNDO"
     elseif n == 3 then
       finish_create()
     end
@@ -361,14 +363,14 @@ end
 
 function play_mode()
   mode = "PLAY"
-  left_icon_text  = "del"
-  right_icon_text = "add"
+  left_icon_text  = "DEL"
+  right_icon_text = "ADD"
 end
 
 function start_move()
   mode = "MOVE"
-  left_icon_text  = "undo"
-  right_icon_text = "done"
+  left_icon_text  = "UNDO"
+  right_icon_text = "DONE"
   position_before_move = { x = focused_shape.c.x, y = focused_shape.c.y }
 end
 
@@ -384,8 +386,8 @@ end
 
 function start_create()
   mode = "PLACE"
-  left_icon_text  = "undo"
-  right_icon_text = "next"
+  left_icon_text  = "UNDO"
+  right_icon_text = "NEXT"
   partial_shape = default_shape:clone()
 end
 
@@ -403,8 +405,8 @@ end
 
 function start_delete()
   mode = "DELETE?"
-  left_icon_text  = "no"
-  right_icon_text = "yes"
+  left_icon_text  = "NO"
+  right_icon_text = "YES"
 end
 
 function undo_delete()
@@ -425,9 +427,6 @@ end
 
 
 function redraw(c)
-  local show_numbers_on_focus = true
-  if partial_shape then show_numbers_on_focus = false end
-    
   screen.clear()
   
   draw_bipolar_grid()
@@ -442,10 +441,15 @@ function redraw(c)
     end
   end
   if focused_shape then
-    focused_shape:draw(map_x, map_y, 6 + (c % 6), show_numbers_on_focus)
+    focused_shape:draw(map_x, map_y, 6 + (c % 6))
   end
   if partial_shape then
-    partial_shape:draw(map_x, map_y, c % 16, not show_numbers_on_focus)
+    partial_shape:draw(map_x, map_y, c % 16)
+  end
+  if partial_shape then
+    partial_shape:draw_numbers(map_x, map_y)
+  elseif focused_shape then
+    focused_shape:draw_numbers(map_x, map_y)
   end
   screen.aa(0)
   
@@ -502,11 +506,11 @@ function draw_bipolar_grid()
     screen.move(96 + from_center, 0)
     screen.line_rel(0, 63)
     
-    screen.level(1)
+    screen.level(3)
     screen.stroke()
   end
   
-  screen.level(3)
+  screen.level(6)
   
   -- x/y center lines
   screen.move(64, 32)

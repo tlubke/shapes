@@ -60,15 +60,29 @@ function shape:draw(map_x, map_y, brightness, show_numbers)
 	screen.line(xs[1],ys[1])
 	screen.close()
 	
-	if show_numbers then
-	  for i = 1, points do
-	    screen.move(xs[i], ys[i])
-	    screen.text(i)
-	  end
-	end
-	
 	screen.level(brightness)
 	screen.stroke()
+end
+  
+function shape:draw_numbers(map_x, map_y)
+  local center = {x = map_x(self.c.x), y = map_y(self.c.y)}
+  local radius = self.r * 6
+  local angle  = self.a
+  local points = self.p
+  
+	local xs = {}
+	local ys = {}
+
+	for i = 1, points do
+		xs[i] = center.x + (radius * math.cos( ((2*i*math.pi) / points) + angle) )
+		ys[i] = center.y + (radius * math.sin( ((2*i*math.pi) / points) + angle) )
+	end
+  
+  screen.level(15)
+  for i = 1, points do
+    screen.move(xs[i],ys[i])
+    screen.text(i)
+	end
 end
   
 return shape
