@@ -98,6 +98,9 @@ function init()
   params:add_option("out_2", "output mode 2:", {"avg. of x's", "avg. of y's"}, 2)
   params:add_option("out_3", "output mode 3:", {"avg. of x's", "avg. of y's"}, 2)
   params:add_option("out_4", "output mode 4:", {"avg. of x's", "avg. of y's"}, 2)
+  
+  uninject_param_method_extensions()
+  inject_param_method_extensions()
 end
 
 
@@ -353,7 +356,67 @@ function reset_y_values()
   end
 end
 
+function load_shapes(filename)
+  local tmp = tab.load(filename)
+  for _, t in pairs (tmp) do
+    setmetatable(t, shape.__index)
+  end
+  shapes = tmp
+  if #shapes > 0 then focused_shape = shapes[1] end
+end
 
+function clone_function(fn)
+  local dumped = string.dump(fn)
+  local cloned = load(dumped)
+  local i = 1
+  while true do
+    local name = debug.getupvalue(fn, i)
+    if not name then
+      break
+    end
+    debug.upvaluejoin(cloned, i, fn, i)
+    i = i + 1
+  end
+  return cloned
+end
+
+function inject_param_method_extensions()
+  -- extend paramset:write()
+  if params.write2 == nil then
+    params.write2 = clone_function(params.write)
+    params.write = function(paramset, filename, name)
+      params:write2(filename, name)
+      if norns.state.name == "shapes" then
+        tab.save(shapes, paths.this.data..filename..".data")
+      end
+    end
+  end
+  
+  -- extend paramset:read()
+  if params.read2 == nil then
+    params.read2 = clone_function(params.read)
+    params.read = function(paramset, filename) 
+      params:read2(filename)
+      if norns.state.name == "shapes" then
+        load_shapes(paths.this.data..filename..".data")
+      end
+    end
+  end
+end
+
+function uninject_param_method_extensions()
+  -- reverse paramset:write() extension
+  if params.write2 ~= nil then
+    params.write  = clone_function(params.write2)
+    params.write2 = nil
+  end
+  
+  -- reverse paramset:read() extension
+  if params.read2 ~= nil then
+    params.read   = clone_function(params.read2)
+    params.read2  = nil
+  end
+end
 
 --------
 -- STATE
