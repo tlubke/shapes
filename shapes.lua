@@ -40,67 +40,91 @@ local partial_shape = nil
 local focused_shape = nil
 local position_before_move = nil
 
-local x_values = {
-  {n = 0, sum = 0},
-  {n = 0, sum = 0},
-  {n = 0, sum = 0},
-  {n = 0, sum = 0}
+local x1_weighted = 0/0
+local x2_weighted = 0/0
+local x3_weighted = 0/0
+local x4_weighted = 0/0
+
+local x1_unweighted = 0/0
+local x2_unweighted = 0/0
+local x3_unweighted = 0/0
+local x4_unweighted = 0/0
+
+local y1_weighted = 0/0
+local y2_weighted = 0/0
+local y3_weighted = 0/0
+local y4_weighted = 0/0
+
+local y1_unweighted = 0/0
+local y2_unweighted = 0/0
+local y3_unweighted = 0/0
+local y4_unweighted = 0/0
+
+local output_options = {
+  {"X1 WEIGHTED",   function(i) crow.output[i].volts = x1_weighted   + params:get("offset_"..i) end},
+  {"X1 UNWEIGHTED", function(i) crow.output[i].volts = x1_unweighted + params:get("offset_"..i) end},
+  {"Y1 WEIGHTED",   function(i) crow.output[i].volts = y1_weighted   + params:get("offset_"..i) end},
+  {"Y1 UNWEIGHTED", function(i) crow.output[i].volts = y1_unweighted + params:get("offset_"..i) end},
+  {"X2 WEIGHTED",   function(i) crow.output[i].volts = x2_weighted   + params:get("offset_"..i) end},
+  {"X2 UNWEIGHTED", function(i) crow.output[i].volts = x2_unweighted + params:get("offset_"..i) end},
+  {"Y2 WEIGHTED",   function(i) crow.output[i].volts = y2_weighted   + params:get("offset_"..i) end},
+  {"Y2 UNWEIGHTED", function(i) crow.output[i].volts = y2_unweighted + params:get("offset_"..i) end},
+  {"X3 WEIGHTED",   function(i) crow.output[i].volts = x3_weighted   + params:get("offset_"..i) end},
+  {"X3 UNWEIGHTED", function(i) crow.output[i].volts = x3_unweighted + params:get("offset_"..i) end},
+  {"Y3 WEIGHTED",   function(i) crow.output[i].volts = y3_weighted   + params:get("offset_"..i) end},
+  {"Y3 UNWEIGHTED", function(i) crow.output[i].volts = y3_unweighted + params:get("offset_"..i) end},
+  {"X4 WEIGHTED",   function(i) crow.output[i].volts = x4_weighted   + params:get("offset_"..i) end},
+  {"X4 UNWEIGHTED", function(i) crow.output[i].volts = x4_unweighted + params:get("offset_"..i) end},
+  {"Y4 WEIGHTED",   function(i) crow.output[i].volts = y4_weighted   + params:get("offset_"..i) end},
+  {"Y4 UNWEIGHTED", function(i) crow.output[i].volts = y4_unweighted + params:get("offset_"..i) end},
 }
-  
-local y_values = {
-  {n = 0, sum = 0},
-  {n = 0, sum = 0},
-  {n = 0, sum = 0},
-  {n = 0, sum = 0}
-}
 
-local x_1 = 0/0
-local x_2 = 0/0
-local x_3 = 0/0
-local x_4 = 0/0
-
-local y_1 = 0/0
-local y_2 = 0/0
-local y_3 = 0/0
-local y_4 = 0/0
-
-function output_avg_x(i)
-  crow.output[i].volts = x_values[i].sum / x_values[i].n
+output_options.strings = {}
+output_options.funcs   = {}
+for i=1, #output_options do
+  table.insert(output_options.strings, i, output_options[i][1])
+  table.insert(output_options.funcs,   i, output_options[i][2])
 end
-
-function output_avg_y(i)
-  crow.output[i].volts = y_values[i].sum / y_values[i].n
-end
-
-local output_modes = {
-  output_avg_x,
-  output_avg_y
-}
 
 local input_state = {
-  key   = {0, 0, 0},
-  key_t = {0, 0, 0}
+  key   = {0, 0, 0}, -- key 1, 2, 3 : pressed or not pressed
+  key_t = {0, 0, 0}, -- key 1, 2, 3 : time of last press
 }
 
 function init()
+  local offset_controlspec = controlspec.new(0, 5, "lin", 0, 0, "v")
+  local offset_formatter   = function(p) return format_voltage(p:get(), 4) end
+  
   for i=1, 4 do
     crow.output[i].volts = 0
     crow.output[i].slew = 0.0099
   end
   
-  voltage_refresh = metro.init(tick, 1/100, -1)
+  voltage_refresh = metro.init(tick, 1/24, -1)
   voltage_refresh:start()
   
-  screen_refresh  = metro.init(function(c) redraw(c) end, 1/30, -1)
+  screen_refresh  = metro.init(function(c) redraw(c) end, 1/24, -1)
   screen_refresh:start()
   
-  params:add_option("out_1", "output mode 1:", {"avg. of x's", "avg. of y's"}, 2)
-  params:add_option("out_2", "output mode 2:", {"avg. of x's", "avg. of y's"}, 2)
-  params:add_option("out_3", "output mode 3:", {"avg. of x's", "avg. of y's"}, 2)
-  params:add_option("out_4", "output mode 4:", {"avg. of x's", "avg. of y's"}, 2)
+  params:add_separator("OUTPUT MODES")
+  params:add_option("out_1", "1:", output_options.strings, 3)
+  params:add_option("out_2", "2:", output_options.strings, 7)
+  params:add_option("out_3", "3:", output_options.strings, 11)
+  params:add_option("out_4", "4:", output_options.strings, 15)
+  params:add_separator("VOLTAGE OFFSETS")
+  params:add_control("offset_1", "1:", offset_controlspec, offset_formatter)
+  params:add_control("offset_2", "2:", offset_controlspec, offset_formatter)
+  params:add_control("offset_3", "3:", offset_controlspec, offset_formatter)
+  params:add_control("offset_4", "4:", offset_controlspec, offset_formatter)
+  params:add_separator("DISPLAY OPTIONS")
+  params:add_option("show_points", "SHOW POINT" , {"NONE", "WEIGHTED", "UNWEIGHTED"}, 2)
+  params:add_option("show_shapes", "SHOW SHAPES", {"NO", "YES"}, 2)
   
-  uninject_param_method_extensions()
   inject_param_method_extensions()
+end
+
+function cleanup()
+  uninject_param_method_extensions()
 end
 
 
@@ -122,10 +146,10 @@ function enc(n,d)
     elseif n == 2 then
       if input_state.key[n] == 1 then
         for _, shp in pairs(shapes) do
-          shp.r = util.clamp(shp.r + d, 1, 10)
+          shp:change_radius(d*0.1)
         end
       else
-        focused_shape.r = util.clamp(focused_shape.r + d, 1, 10)
+        focused_shape:change_radius(d*0.1)
       end
     elseif n == 3 then
       if input_state.key[n] == 1 then
@@ -142,7 +166,7 @@ function enc(n,d)
   elseif mode == "MOVE" then
   
     if     n == 1 then
-      -- nothing
+      focused_shape:change_points(d)
     elseif n == 2 then
       focused_shape.c.x = util.clamp(focused_shape.c.x + d, -5, 5)
     elseif n == 3 then
@@ -151,27 +175,38 @@ function enc(n,d)
   ---------
   -- CREATE
   ---------
-  elseif mode == "PLACE" then
+  elseif mode == "X/Y" then
     
     if     n == 1 then
-      -- nothing
+      --nothing
     elseif n == 2 then
       partial_shape.c.x = util.clamp(partial_shape.c.x + d, -5, 5)
     elseif n == 3 then
       partial_shape.c.y = util.clamp(partial_shape.c.y - d, -5, 5)
     end
     
-  elseif mode == "SHAPE" then
+  elseif mode == "SIDES/LENGTH" then
     
     if     n == 1 then
-      -- nothing
+      partial_shape:change_focused_point(d)
     elseif n == 2 then
-      partial_shape.r = util.clamp(partial_shape.r + d, 1, 10)
+      partial_shape:change_points(d)
     elseif n == 3 then
-      partial_shape.p = util.clamp(partial_shape.p + d, 1, 4)
+      partial_shape:change_point_radius(d*0.1)
+    end
+ 
+  elseif mode == "GROUP/WEIGHT" then
+    
+    if     n == 1 then
+      partial_shape:change_focused_point(d)
+    elseif n == 2 then
+      partial_shape:change_point_group(d)
+    elseif n == 3 then
+      partial_shape:change_point_weight(d)
     end
     
   end
+  
 end
 
 function key(n,z)
@@ -218,25 +253,36 @@ function key(n,z)
   ----------
   -- CREATE
   ----------
-  elseif mode == "PLACE" then
+  elseif mode == "X/Y" then
   
     if     n == 1 then
       -- nothing
     elseif n == 2 then
       undo_create()
     elseif n == 3 then
-      mode = "SHAPE"
+      mode = "SIDES/LENGTH"
       left_icon_text = "BACK"
     end
     
-  elseif mode == "SHAPE" then
+  elseif mode == "SIDES/LENGTH" then
     
     if     n == 1 then
       -- nothing
     elseif n == 2 then
-      mode = "PLACE"
+      mode = "X/Y"
       right_icon_text = "NEXT"
       left_icon_text = "UNDO"
+    elseif n == 3 then
+      mode = "GROUP/WEIGHT"
+      
+    end
+    
+  elseif mode == "GROUP/WEIGHT" then
+    
+    if     n == 1 then
+      -- nothing
+    elseif n == 2 then
+      mode = "SIDES/LENGTH"
     elseif n == 3 then
       finish_create()
     end
@@ -265,40 +311,17 @@ end
 
 
 function tick()
-  reset_x_values()
-  reset_y_values()
   for _, shp in pairs(shapes) do
     shp.a = shp.a + (shp.s / 1000)
-    
-    local xs, ys = shp:values()
-    for j = 1, #xs do
-      if xs[j] <= 5 and xs[j] >= -5 then
-        x_values[j].n = x_values[j].n + 1
-        x_values[j].sum = x_values[j].sum + xs[j]
-      end
-    end
-    for j = 1, #ys do
-      if ys[j] <= 5 and ys[j] >= -5 then
-        y_values[j].n = y_values[j].n + 1
-        y_values[j].sum = y_values[j].sum + ys[j]
-      end
-    end
   end
   
-  x_1 = x_values[1].sum / x_values[1].n
-  x_2 = x_values[2].sum / x_values[2].n
-  x_3 = x_values[3].sum / x_values[3].n
-  x_4 = x_values[4].sum / x_values[4].n
+  calculate_weighted_values()
+  calculate_unweighted_values()
   
-  y_1 = y_values[1].sum / y_values[1].n
-  y_2 = y_values[2].sum / y_values[2].n
-  y_3 = y_values[3].sum / y_values[3].n
-  y_4 = y_values[4].sum / y_values[4].n
-
-  output_modes[params:get("out_1")](1)
-  output_modes[params:get("out_2")](2)
-  output_modes[params:get("out_3")](3)
-  output_modes[params:get("out_4")](4)
+  output_options.funcs[params:get("out_1")](1)
+  output_options.funcs[params:get("out_2")](2)
+  output_options.funcs[params:get("out_3")](3)
+  output_options.funcs[params:get("out_4")](4)
 end
 
 
@@ -308,6 +331,87 @@ end
 -- ---------------------------------
 
 
+
+function calculate_weighted_values()
+  local x_values = {}
+  local y_values = {}
+  for i=1, 4 do
+    x_values[i] = {sum = 0, total_weight = 0}
+    y_values[i] = {sum = 0, total_weight = 0}
+  end
+  
+  for _, shp in pairs(shapes) do
+    -- each element is a table of value v, weight w, and group g
+    local xs, ys = shp:values() 
+    
+    for _, x in pairs(xs) do
+      local group = x.g
+      if x.v <= 5 and x.v >= -5 then
+        x_values[group].sum          = x_values[group].sum + (x.v * x.w)
+        x_values[group].total_weight = x_values[group].total_weight + x.w
+      end
+    end
+    
+    for _, y in pairs(ys) do
+      local group = y.g
+      if y.v <= 5 and y.v >= -5 then
+        y_values[group].sum          = y_values[group].sum + (y.v * y.w)
+        y_values[group].total_weight = y_values[group].total_weight + y.w
+      end
+    end
+  end
+  
+  x1_weighted = (x_values[1].sum / x_values[1].total_weight)
+  x2_weighted = (x_values[2].sum / x_values[2].total_weight)
+  x3_weighted = (x_values[3].sum / x_values[3].total_weight)
+  x4_weighted = (x_values[4].sum / x_values[4].total_weight)
+  
+  y1_weighted = (y_values[1].sum / y_values[1].total_weight)
+  y2_weighted = (y_values[2].sum / y_values[2].total_weight)
+  y3_weighted = (y_values[3].sum / y_values[3].total_weight)
+  y4_weighted = (y_values[4].sum / y_values[4].total_weight)
+end
+
+function calculate_unweighted_values()
+  local x_values = {}
+  local y_values = {}
+  for i=1, 4 do
+    x_values[i] = {sum = 0, n = 0}
+    y_values[i] = {sum = 0, n = 0}
+  end
+  
+  for _, shp in pairs(shapes) do
+    
+    -- each element is a table of value v, weight w, and group g
+    local xs, ys = shp:values() 
+    
+    for _, x in pairs(xs) do
+      local group = x.g
+      if x.v <= 5 and x.v >= -5 then
+        x_values[group].n            = x_values[group].n + 1
+        x_values[group].sum          = x_values[group].sum + x.v
+      end
+    end
+    
+    for _, y in pairs(ys) do
+      local group = y.g
+      if y.v <= 5 and y.v >= -5 then
+        y_values[group].n            = y_values[group].n + 1
+        y_values[group].sum          = y_values[group].sum + y.v
+      end
+    end
+  end
+  
+  x1_unweighted = x_values[1].sum / x_values[1].n
+  x2_unweighted = x_values[2].sum / x_values[2].n
+  x3_unweighted = x_values[3].sum / x_values[3].n
+  x4_unweighted = x_values[4].sum / x_values[4].n
+  
+  y1_unweighted = y_values[1].sum / y_values[1].n
+  y2_unweighted = y_values[2].sum / y_values[2].n
+  y3_unweighted = y_values[3].sum / y_values[3].n
+  y4_unweighted = y_values[4].sum / y_values[4].n
+end
 
 function map_x(n)
   return n * 6 + 95.5
@@ -332,27 +436,24 @@ function delete_focused()
   end
 end
 
-function format_voltage(n)
+function format_voltage(n, decimal_places)
+  local decimal_places = decimal_places or 2
   if     n ~= n then
     return "+_.__v" -- NaN
   elseif n >= 0 then
-    return string.format("+%.02fv", n)
+    return string.format("+%.0"..decimal_places.."fv", n)
   else
-    return string.format("%.02fv", n)
+    return string.format("+%.0"..decimal_places.."fv", n)
   end
 end
 
-function reset_x_values()
-  for _, v in pairs(x_values) do
-    v.n = 0
-    v.sum = 0
-  end
-end
-
-function reset_y_values()
-  for _, v in pairs(y_values) do
-    v.n = 0
-    v.sum = 0
+function format_weight(n)
+  if     n ~= n then
+    return "_" -- NaN
+  elseif n >= 0 then
+    return string.format("+%d", n)
+  else
+    return string.format("%d", n)
   end
 end
 
@@ -360,10 +461,19 @@ function load_shapes(filename)
   local tmp = tab.load(filename)
   for _, t in pairs (tmp) do
     setmetatable(t, shape.__index)
+    t:restore()
   end
   shapes = tmp
   if #shapes > 0 then focused_shape = shapes[1] end
 end
+
+
+
+---------
+-- MISC.
+---------
+
+
 
 function clone_function(fn)
   local dumped = string.dump(fn)
@@ -418,6 +528,8 @@ function uninject_param_method_extensions()
   end
 end
 
+
+
 --------
 -- STATE
 --------
@@ -448,7 +560,7 @@ function finish_move()
 end
 
 function start_create()
-  mode = "PLACE"
+  mode = "X/Y"
   left_icon_text  = "UNDO"
   right_icon_text = "NEXT"
   partial_shape = default_shape:clone()
@@ -490,31 +602,35 @@ end
 
 
 function redraw(c)
+  local c = c or 0 -- for when redraw() is called by norns menu changes
   screen.clear()
   
   draw_bipolar_grid()
 
   screen.aa(1)
   screen.level(15)
-  for _, shp in pairs(shapes) do
-    if shp == focused_shape then
-      -- don't draw
-    else
-      shp:draw(map_x, map_y, 15)
+  if params:get("show_shapes") ~= 1 then
+    for _, shp in pairs(shapes) do
+      if shp == focused_shape then
+        shp:draw(map_x, map_y, 6 + (c % 6))
+      else
+        shp:draw(map_x, map_y, 15) -- normal
+      end
+    end
+    if partial_shape then
+      partial_shape:draw(map_x, map_y, 15)
+      partial_shape:draw_arrow_to_focused_point(map_x, map_y, 2 + ((c % 11)/3))
     end
   end
-  if focused_shape then
-    focused_shape:draw(map_x, map_y, 6 + (c % 6))
-  end
-  if partial_shape then
-    partial_shape:draw(map_x, map_y, c % 16)
-  end
-  if partial_shape then
-    partial_shape:draw_numbers(map_x, map_y)
-  elseif focused_shape then
-    focused_shape:draw_numbers(map_x, map_y)
-  end
   screen.aa(0)
+  
+  screen.level(15)
+  
+  if     params:get("show_points") == 3 then
+    draw_weighted_centers_on_grid()
+  elseif params:get("show_points") == 2 then
+    draw_unweighted_centers_on_grid()
+  end
   
   -- black outline around grid
   screen.level(0)
@@ -525,18 +641,14 @@ function redraw(c)
   screen.rect(0, 0, 64, 64)
   screen.fill()
   
-  -- (x, y)
+  -- (output voltage) shape side, weight
   screen.level(15)
   screen.font_face(2)
-  screen.move(0, 8)
-  screen.text("1: ("..format_voltage(x_1)..","..format_voltage(y_1)..")")
-  screen.move(0, 16)
-  screen.text("2: ("..format_voltage(x_2)..","..format_voltage(y_2)..")")
-  screen.move(0, 24)
-  screen.text("3: ("..format_voltage(x_3)..","..format_voltage(y_3)..")")
-  screen.move(0, 32)
-  screen.text("4: ("..format_voltage(x_4)..","..format_voltage(y_4)..")")
+  draw_crow_output_voltages_text()
+  draw_focused_shape_point_info_text(15)
+  draw_partial_shape_point_info_text((c+3) % 16)
   
+  screen.level(15)
   -- mode banner
   screen.rect(0,35, 58, 10)
   screen.fill()
@@ -591,6 +703,78 @@ function draw_bipolar_grid()
   -- box around grid
   screen.rect(65,1, 62, 62)
   screen.stroke()
+end
+
+function draw_crow_output_voltages_text()
+  for i=1, 4 do
+    screen.move(0,i*8)
+    screen.text("("..format_voltage(crow.output[i].volts)..")   ")
+  end
+end
+
+function draw_focused_shape_point_info_text(brightness)
+  screen.level(brightness)
+  for i=1, 4 do
+    if focused_shape and focused_shape.p.count >= i then
+      screen.move(32, i*8)
+      local group  = focused_shape.p[i].group
+      local weight = format_weight(focused_shape.p[i].weight)
+      screen.text(group..", "..weight)
+    end
+  end
+end
+
+function draw_partial_shape_point_info_text(brightness)
+  for i=1, 4 do
+    if partial_shape and partial_shape.p.count >= i then
+      if partial_shape.f == partial_shape.p[i] then
+        screen.level(brightness)
+      else
+        screen.level(15)
+      end
+      screen.move(32, i*8)
+      local group  = partial_shape.p[i].group
+      local weight = format_weight(partial_shape.p[i].weight)
+      screen.text(group..", "..weight)
+    end
+  end
+end
+
+function draw_pixel_border(x, y)
+  screen.level(0)
+  screen.pixel(x-1,y)
+  screen.pixel(x+1,y)
+  screen.pixel(x-1,y-1)
+  screen.pixel(x  ,y-1)
+  screen.pixel(x+1,y-1)
+  screen.pixel(x-1,y+1)
+  screen.pixel(x  ,y+1)
+  screen.pixel(x+1,y+1)
+  screen.fill()
+end
+
+function draw_weighted_centers_on_grid()
+  screen.pixel(map_x(x1_weighted), map_y(y1_weighted))
+  screen.pixel(map_x(x2_weighted), map_y(y2_weighted))
+  screen.pixel(map_x(x3_weighted), map_y(y3_weighted))
+  screen.pixel(map_x(x4_weighted), map_y(y4_weighted))
+  screen.fill()
+  draw_pixel_border(map_x(x1_weighted), map_y(y1_weighted))
+  draw_pixel_border(map_x(x2_weighted), map_y(y2_weighted))
+  draw_pixel_border(map_x(x3_weighted), map_y(y3_weighted))
+  draw_pixel_border(map_x(x4_weighted), map_y(y4_weighted))
+end
+
+function draw_unweighted_centers_on_grid()
+  screen.pixel(map_x(x1_unweighted), map_y(y1_unweighted))
+  screen.pixel(map_x(x2_unweighted), map_y(y2_unweighted))
+  screen.pixel(map_x(x3_unweighted), map_y(y3_unweighted))
+  screen.pixel(map_x(x4_unweighted), map_y(y4_unweighted))
+  screen.fill()
+  draw_pixel_border(map_x(x1_unweighted), map_y(y1_unweighted))
+  draw_pixel_border(map_x(x2_unweighted), map_y(y2_unweighted))
+  draw_pixel_border(map_x(x3_unweighted), map_y(y3_unweighted))
+  draw_pixel_border(map_x(x4_unweighted), map_y(y4_unweighted))
 end
 
 function draw_left_icon()
