@@ -94,18 +94,18 @@ local input_state = {
 function init()
   local offset_controlspec = controlspec.new(0, 5, "lin", 0, 0, "v")
   local offset_formatter   = function(p) return format_voltage(p:get(), 4) end
-  
+
   for i=1, 4 do
     crow.output[i].volts = 0
     crow.output[i].slew = 0.0099
   end
-  
+
   voltage_refresh = metro.init(tick, 1/24, -1)
   voltage_refresh:start()
-  
+
   screen_refresh  = metro.init(function(c) redraw(c) end, 1/24, -1)
   screen_refresh:start()
-  
+
   params:add_separator("OUTPUT MODES")
   params:add_option("out_1", "1:", output_options.strings, 3)
   params:add_option("out_2", "2:", output_options.strings, 7)
@@ -119,7 +119,7 @@ function init()
   params:add_separator("DISPLAY OPTIONS")
   params:add_option("show_points", "SHOW POINT" , {"NONE", "WEIGHTED", "UNWEIGHTED"}, 2)
   params:add_option("show_shapes", "SHOW SHAPES", {"NO", "YES"}, 2)
-  
+
   inject_param_method_extensions()
 end
 
@@ -140,7 +140,7 @@ function enc(n,d)
   -- PLAY
   ----------
   if     mode == "PLAY" then
-    
+
     if n == 1 then
       focus_next(d)
     elseif n == 2 then
@@ -176,7 +176,7 @@ function enc(n,d)
   -- CREATE
   ---------
   elseif mode == "X/Y" then
-    
+
     if     n == 1 then
       --nothing
     elseif n == 2 then
@@ -184,9 +184,9 @@ function enc(n,d)
     elseif n == 3 then
       partial_shape.c.y = util.clamp(partial_shape.c.y - d, -5, 5)
     end
-    
+
   elseif mode == "SIDES/LENGTH" then
-    
+
     if     n == 1 then
       partial_shape:change_focused_point(d)
     elseif n == 2 then
@@ -194,9 +194,9 @@ function enc(n,d)
     elseif n == 3 then
       partial_shape:change_point_radius(d*0.1)
     end
- 
+
   elseif mode == "GROUP/WEIGHT" then
-    
+
     if     n == 1 then
       partial_shape:change_focused_point(d)
     elseif n == 2 then
@@ -204,14 +204,14 @@ function enc(n,d)
     elseif n == 3 then
       partial_shape:change_point_weight(d)
     end
-    
+
   end
-  
+
 end
 
 function key(n,z)
   input_state.key[n] = z
-  
+
   if z == 1 then
     -- record time of press
     input_state.key_t[n] = util.time()
@@ -224,12 +224,12 @@ function key(n,z)
       return
     end
   end
-  
+
   ----------
   -- PLAY
   ----------
   if     mode == "PLAY" then
-    
+
     if n == 1 and focused_shape then
       start_move()
     elseif n == 2 then
@@ -242,7 +242,7 @@ function key(n,z)
   -- MOVE
   ------------
   elseif mode == "MOVE" then
-  
+
     if     n == 1 then
       -- nothing
     elseif n == 2 then
@@ -254,7 +254,7 @@ function key(n,z)
   -- CREATE
   ----------
   elseif mode == "X/Y" then
-  
+
     if     n == 1 then
       -- nothing
     elseif n == 2 then
@@ -263,9 +263,9 @@ function key(n,z)
       mode = "SIDES/LENGTH"
       left_icon_text = "BACK"
     end
-    
+
   elseif mode == "SIDES/LENGTH" then
-    
+
     if     n == 1 then
       -- nothing
     elseif n == 2 then
@@ -274,11 +274,11 @@ function key(n,z)
       left_icon_text = "UNDO"
     elseif n == 3 then
       mode = "GROUP/WEIGHT"
-      
+
     end
-    
+
   elseif mode == "GROUP/WEIGHT" then
-    
+
     if     n == 1 then
       -- nothing
     elseif n == 2 then
@@ -290,7 +290,7 @@ function key(n,z)
   -- DELETE
   ----------
   elseif mode == "DELETE?" then
-    
+
     if     n == 1 then
       -- nothing
     elseif n == 2 then
@@ -298,7 +298,7 @@ function key(n,z)
     elseif n == 3 then
       finish_delete()
     end
-  
+
   end
 end
 
@@ -314,10 +314,10 @@ function tick()
   for _, shp in pairs(shapes) do
     shp.a = shp.a + (shp.s / 1000)
   end
-  
+
   calculate_weighted_values()
   calculate_unweighted_values()
-  
+
   output_options.funcs[params:get("out_1")](1)
   output_options.funcs[params:get("out_2")](2)
   output_options.funcs[params:get("out_3")](3)
@@ -339,11 +339,11 @@ function calculate_weighted_values()
     x_values[i] = {sum = 0, total_weight = 0}
     y_values[i] = {sum = 0, total_weight = 0}
   end
-  
+
   for _, shp in pairs(shapes) do
     -- each element is a table of value v, weight w, and group g
     local xs, ys = shp:values() 
-    
+
     for _, x in pairs(xs) do
       local group = x.g
       if x.v <= 5 and x.v >= -5 then
@@ -351,7 +351,7 @@ function calculate_weighted_values()
         x_values[group].total_weight = x_values[group].total_weight + x.w
       end
     end
-    
+
     for _, y in pairs(ys) do
       local group = y.g
       if y.v <= 5 and y.v >= -5 then
@@ -360,12 +360,12 @@ function calculate_weighted_values()
       end
     end
   end
-  
+
   x1_weighted = (x_values[1].sum / x_values[1].total_weight)
   x2_weighted = (x_values[2].sum / x_values[2].total_weight)
   x3_weighted = (x_values[3].sum / x_values[3].total_weight)
   x4_weighted = (x_values[4].sum / x_values[4].total_weight)
-  
+
   y1_weighted = (y_values[1].sum / y_values[1].total_weight)
   y2_weighted = (y_values[2].sum / y_values[2].total_weight)
   y3_weighted = (y_values[3].sum / y_values[3].total_weight)
@@ -379,12 +379,12 @@ function calculate_unweighted_values()
     x_values[i] = {sum = 0, n = 0}
     y_values[i] = {sum = 0, n = 0}
   end
-  
+
   for _, shp in pairs(shapes) do
-    
+
     -- each element is a table of value v, weight w, and group g
     local xs, ys = shp:values() 
-    
+
     for _, x in pairs(xs) do
       local group = x.g
       if x.v <= 5 and x.v >= -5 then
@@ -392,7 +392,7 @@ function calculate_unweighted_values()
         x_values[group].sum          = x_values[group].sum + x.v
       end
     end
-    
+
     for _, y in pairs(ys) do
       local group = y.g
       if y.v <= 5 and y.v >= -5 then
@@ -401,12 +401,12 @@ function calculate_unweighted_values()
       end
     end
   end
-  
+
   x1_unweighted = x_values[1].sum / x_values[1].n
   x2_unweighted = x_values[2].sum / x_values[2].n
   x3_unweighted = x_values[3].sum / x_values[3].n
   x4_unweighted = x_values[4].sum / x_values[4].n
-  
+
   y1_unweighted = y_values[1].sum / y_values[1].n
   y2_unweighted = y_values[2].sum / y_values[2].n
   y3_unweighted = y_values[3].sum / y_values[3].n
@@ -501,7 +501,7 @@ function inject_param_method_extensions()
       end
     end
   end
-  
+
   -- extend paramset:read()
   if params.read2 == nil then
     params.read2 = clone_function(params.read)
@@ -520,7 +520,7 @@ function uninject_param_method_extensions()
     params.write  = clone_function(params.write2)
     params.write2 = nil
   end
-  
+
   -- reverse paramset:read() extension
   if params.read2 ~= nil then
     params.read   = clone_function(params.read2)
@@ -604,7 +604,7 @@ end
 function redraw(c)
   local c = c or 0 -- for when redraw() is called by norns menu changes
   screen.clear()
-  
+
   draw_bipolar_grid()
 
   screen.aa(1)
@@ -623,31 +623,31 @@ function redraw(c)
     end
   end
   screen.aa(0)
-  
+
   screen.level(15)
-  
+
   if     params:get("show_points") == 3 then
     draw_weighted_centers_on_grid()
   elseif params:get("show_points") == 2 then
     draw_unweighted_centers_on_grid()
   end
-  
+
   -- black outline around grid
   screen.level(0)
   screen.rect(64,-1,64,65)
   screen.stroke()
-  
+
   -- blackout left half
   screen.rect(0, 0, 64, 64)
   screen.fill()
-  
+
   -- (output voltage) shape side, weight
   screen.level(15)
   screen.font_face(2)
   draw_crow_output_voltages_text()
   draw_focused_shape_point_info_text(15)
   draw_partial_shape_point_info_text((c+3) % 16)
-  
+
   screen.level(15)
   -- mode banner
   screen.rect(0,35, 58, 10)
@@ -656,50 +656,50 @@ function redraw(c)
   screen.move(29, 43)
   screen.text_center(mode)
   screen.level(15)
-  
+
   draw_left_icon()
   draw_right_icon()
-  
+
   screen.update()
 end
 
 function draw_bipolar_grid()
   screen.line_width(1)
-  
+
   for i=1, 5 do
     from_center = (i*6)
-    
+
     -- x axis lines
     screen.move(64, 32 - from_center)
     screen.line_rel(63, 0)
     screen.move(64, 32 + from_center)
     screen.line_rel(63, 0)
-    
+
     -- y axis lines
     screen.move(96 - from_center, 0)
     screen.line_rel(0, 63)
     screen.move(96 + from_center, 0)
     screen.line_rel(0, 63)
-    
+
     screen.level(3)
     screen.stroke()
   end
-  
+
   screen.level(6)
-  
+
   -- x/y center lines
   screen.move(64, 32)
   screen.line_rel(63, 0)
   screen.move(96, 0)
   screen.line_rel(0, 63)
   screen.stroke()
-  
+
   -- box around center line
   screen.rect(94, 30, 3, 3)
   screen.fill()
-  
+
   screen.level(15)
-  
+
   -- box around grid
   screen.rect(65,1, 62, 62)
   screen.stroke()

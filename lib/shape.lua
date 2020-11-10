@@ -114,23 +114,23 @@ function shape:draw(map_x, map_y, brightness)
   local count = tab.count(xs)
   local first_point = { x = map_x(xs[1].v), y = map_y(ys[1].v) }
   local last_point  = { x = map_x(xs[count].v), y = map_y(ys[count].v) }
-  
-	if count == 1 then
-	  screen.move(center.x, center.y)
-	else
-	  for i = 2, count do
-	    local from = { x = map_x(xs[i-1].v), y = map_y(ys[i-1].v) }
-	    local to   = { x = map_x(xs[i].v), y = map_y(ys[i].v) }
-	    screen.move(from.x, from.y)
-		  screen.line(to.x, to.y)
-	  end
-	  screen.move(last_point.x, last_point.y)
-	end
-	screen.line(first_point.x , first_point.y)
-	screen.close()
+
+  if count == 1 then
+    screen.move(center.x, center.y)
+  else
+    for i = 2, count do
+      local from = { x = map_x(xs[i-1].v), y = map_y(ys[i-1].v) }
+      local to   = { x = map_x(xs[i].v), y = map_y(ys[i].v) }
+      screen.move(from.x, from.y)
+      screen.line(to.x, to.y)
+    end
+    screen.move(last_point.x, last_point.y)
+  end
+  screen.line(first_point.x , first_point.y)
+  screen.close()
 	
-	screen.level(brightness)
-	screen.stroke()
+  screen.level(brightness)
+  screen.stroke()
 end
   
 function shape:draw_arrow_to_focused_point(map_x, map_y, offset)
@@ -139,17 +139,17 @@ function shape:draw_arrow_to_focused_point(map_x, map_y, offset)
   local points = self.p
   
   local i = tab.key(points, self.f)
-	local radius = points[i].distance * 6 + offset
-	local x = center.x + (radius * math.cos( (((i-1)*2*math.pi) / points.count) + angle) )
-	local y = center.y + (radius * math.sin( (((i-1)*2*math.pi) / points.count) + angle) )
+  local radius = points[i].distance * 6 + offset
+  local x = center.x + (radius * math.cos( (((i-1)*2*math.pi) / points.count) + angle) )
+  local y = center.y + (radius * math.sin( (((i-1)*2*math.pi) / points.count) + angle) )
   local arrow_side1x = x + (6  * math.cos( (((i-1)*2*math.pi) / points.count) - (math.pi/4)))
   local arrow_side1y = y + (6  * math.sin( (((i-1)*2*math.pi) / points.count) - (math.pi/4)))
   local arrow_side2x = x + (6  * math.cos( (((i-1)*2*math.pi) / points.count) + (math.pi/4)))
   local arrow_side2y = y + (6  * math.sin( (((i-1)*2*math.pi) / points.count) + (math.pi/4)))
   local arrow_shaftx1 = center.x + ((radius+2)  * math.cos( (((i-1)*2*math.pi) / points.count) + angle) )
-	local arrow_shafty1 = center.y + ((radius+2)  * math.sin( (((i-1)*2*math.pi) / points.count) + angle) )
+  local arrow_shafty1 = center.y + ((radius+2)  * math.sin( (((i-1)*2*math.pi) / points.count) + angle) )
   local arrow_shaftx2 = center.x + ((radius+10) * math.cos( (((i-1)*2*math.pi) / points.count) + angle) )
-	local arrow_shafty2 = center.y + ((radius+10) * math.sin( (((i-1)*2*math.pi) / points.count) + angle) )
+  local arrow_shafty2 = center.y + ((radius+10) * math.sin( (((i-1)*2*math.pi) / points.count) + angle) )
   
   screen.move(x,y)
   screen.line(arrow_side1x, arrow_side1y)
