@@ -154,10 +154,10 @@ function enc(n,d)
     elseif n == 3 then
       if input_state.key[n] == 1 then
         for _, shp in pairs(shapes) do
-          shp.s = shp.s + d
+          shp.s = shp.s - d -- counter-clockwise speed
         end
       else
-        focused_shape.s = focused_shape.s + d
+        focused_shape.s = focused_shape.s - d
       end
     end
   --------
@@ -443,7 +443,7 @@ function format_voltage(n, decimal_places)
   elseif n >= 0 then
     return string.format("+%.0"..decimal_places.."fv", n)
   else
-    return string.format("+%.0"..decimal_places.."fv", n)
+    return string.format("%.0"..decimal_places.."fv", n)
   end
 end
 
