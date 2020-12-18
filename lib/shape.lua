@@ -115,6 +115,8 @@ function shape:draw(map_x, map_y, brightness)
   local first_point = { x = map_x(xs[1].v), y = map_y(ys[1].v) }
   local last_point  = { x = map_x(xs[count].v), y = map_y(ys[count].v) }
 
+  screen.aa(1)
+
   if count == 1 then
     screen.move(center.x, center.y)
   else
@@ -131,12 +133,16 @@ function shape:draw(map_x, map_y, brightness)
 	
   screen.level(brightness)
   screen.stroke()
+  
+  screen.aa(0)
 end
   
 function shape:draw_arrow_to_focused_point(map_x, map_y, offset)
   local center = {x = map_x(self.c.x), y = map_y(self.c.y)}
   local angle  = self.a
   local points = self.p
+  
+  screen.aa(1)
   
   local i = tab.key(points, self.f)
   local radius = points[i].distance * 6 + offset
@@ -162,6 +168,8 @@ function shape:draw_arrow_to_focused_point(map_x, map_y, offset)
   screen.line(arrow_shaftx2, arrow_shafty2)
   screen.stroke()
   screen.line_width(1)
+  
+  screen.aa(0)
 end
   
 return shape

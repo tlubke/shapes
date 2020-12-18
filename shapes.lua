@@ -81,7 +81,7 @@ local output_options = {
 
 output_options.strings = {}
 output_options.funcs   = {}
-for i=1, #output_options do
+for i, _ in ipairs (output_options) do
   table.insert(output_options.strings, i, output_options[i][1])
   table.insert(output_options.funcs,   i, output_options[i][2])
 end
@@ -94,17 +94,7 @@ local input_state = {
 function init()
   local offset_controlspec = controlspec.new(0, 5, "lin", 0, 0, "v")
   local offset_formatter   = function(p) return format_voltage(p:get(), 4) end
-
-  for i=1, 4 do
-    crow.output[i].volts = 0
-    crow.output[i].slew = 0.0099
-  end
-
-  voltage_refresh = metro.init(tick, 1/24, -1)
-  voltage_refresh:start()
-
-  screen_refresh  = metro.init(function(c) redraw(c) end, 1/24, -1)
-  screen_refresh:start()
+  local refresh_controlspec = controlspec.new(25, 250, "exp", 1, 100, "hz")
 
   params:add_separator("OUTPUT MODES")
   params:add_option("out_1", "1:", output_options.strings, 3)
@@ -119,12 +109,35 @@ function init()
   params:add_separator("DISPLAY OPTIONS")
   params:add_option("show_points", "SHOW POINT" , {"NONE", "WEIGHTED", "UNWEIGHTED"}, 2)
   params:add_option("show_shapes", "SHOW SHAPES", {"NO", "YES"}, 2)
+  params:add_separator("AUDIO OPTIONS")
+  params:add_control("refresh_rate", "REFRESH RATE", refresh_controlspec)
+  params:set_action("refresh_rate", function(_) init_metros() end)
+
+  init_metros()
 
   inject_param_method_extensions()
 end
 
 function cleanup()
   uninject_param_method_extensions()
+end
+
+function init_metros()
+  local tick_rate   = 1/(params:get("refresh_rate") or 100)
+  local screen_rate = 1/24
+  
+  metro.free_all()
+  
+  voltage_refresh = metro.init(tick, tick_rate, -1)
+  voltage_refresh:start()
+
+  screen_refresh  = metro.init(function(c) redraw(c) end, screen_rate, -1)
+  screen_refresh:start()
+  
+  for i=1, 4 do
+    crow.output[i].volts = 0
+    crow.output[i].slew = tick_rate - tick_rate^2
+  end
 end
 
 
@@ -136,11 +149,14 @@ end
 
 
 function enc(n,d)
+
+  
   ----------
   -- PLAY
   ----------
   if     mode == "PLAY" then
 
+    if focused_shape == nil then return end
     if n == 1 then
       focus_next(d)
     elseif n == 2 then
@@ -607,24 +623,21 @@ function redraw(c)
 
   draw_bipolar_grid()
 
-  screen.aa(1)
-  screen.level(15)
   if params:get("show_shapes") ~= 1 then
     for _, shp in pairs(shapes) do
       if shp == focused_shape then
-        shp:draw(map_x, map_y, 6 + (c % 6))
+        shp:draw(map_x, map_y, 6 + (c % 10))
       else
-        shp:draw(map_x, map_y, 15) -- normal
+        shp:draw(map_x, map_y, 6) -- normal
       end
     end
     if partial_shape then
       partial_shape:draw(map_x, map_y, 15)
-      partial_shape:draw_arrow_to_focused_point(map_x, map_y, 2 + ((c % 11)/3))
+      if mode == "SIDES/LENGTH" or mode == "GROUP/WEIGHT" then
+        partial_shape:draw_arrow_to_focused_point(map_x, map_y, 2 + ((c % 11)/3))
+      end
     end
   end
-  screen.aa(0)
-
-  screen.level(15)
 
   if     params:get("show_points") == 3 then
     draw_weighted_centers_on_grid()
@@ -642,14 +655,19 @@ function redraw(c)
   screen.fill()
 
   -- (output voltage) shape side, weight
-  screen.level(15)
-  screen.font_face(2)
   draw_crow_output_voltages_text()
-  draw_focused_shape_point_info_text(15)
-  draw_partial_shape_point_info_text((c+3) % 16)
+  if partial_shape then
+    if mode == "SIDES/LENGTH" or mode == "GROUP/WEIGHT" then
+      draw_partial_shape_point_info_text((c+3) % 16)
+    else
+      draw_partial_shape_point_info_text(15)
+    end
+  else
+    draw_focused_shape_point_info_text(15)
+  end
 
-  screen.level(15)
   -- mode banner
+  screen.level(15)
   screen.rect(0,35, 58, 10)
   screen.fill()
   screen.level(0)
@@ -659,6 +677,8 @@ function redraw(c)
 
   draw_left_icon()
   draw_right_icon()
+
+  draw_selection_indicator()
 
   screen.update()
 end
@@ -706,6 +726,8 @@ function draw_bipolar_grid()
 end
 
 function draw_crow_output_voltages_text()
+  screen.level(15)
+  screen.font_face(2)
   for i=1, 4 do
     screen.move(0,i*8)
     screen.text("("..format_voltage(crow.output[i].volts)..")   ")
@@ -714,6 +736,7 @@ end
 
 function draw_focused_shape_point_info_text(brightness)
   screen.level(brightness)
+  screen.font_face(2)
   for i=1, 4 do
     if focused_shape and focused_shape.p.count >= i then
       screen.move(32, i*8)
@@ -725,6 +748,7 @@ function draw_focused_shape_point_info_text(brightness)
 end
 
 function draw_partial_shape_point_info_text(brightness)
+  screen.font_face(2)
   for i=1, 4 do
     if partial_shape and partial_shape.p.count >= i then
       if partial_shape.f == partial_shape.p[i] then
@@ -797,3 +821,24 @@ function draw_right_icon()
   screen.text_center(right_icon_text or "TEST")
 end
 
+function draw_selection_indicator()
+  screen.level(15)
+  screen.move(60, 4)
+  screen.text("s")
+  screen.level(1)
+  screen.rect(60, 5, 2, 58)
+  screen.fill()
+  
+  local n = tab.count(shapes)
+  for i, s in ipairs(shapes) do
+    if s == focused_shape then
+      screen.level(15)
+      screen.rect(59, 5 + ((i-1) * 3), 4, 2)
+      screen.fill()
+    else
+      screen.level(8)
+      screen.rect(60, 5 + ((i-1) * 3), 2, 2)
+      screen.fill()
+    end
+  end
+end
