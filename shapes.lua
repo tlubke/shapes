@@ -30,6 +30,8 @@ local shape = include "lib/shape"
 
 -- local variables
 -- modes and various states of being
+local default_params = nil
+
 local mode = "PLAY"
 local left_icon_text = "DEL"
 local right_icon_text = "ADD"
@@ -61,22 +63,22 @@ local y3_unweighted = 0/0
 local y4_unweighted = 0/0
 
 local output_options = {
-  {"X1 WEIGHTED",   function(i) crow.output[i].volts = x1_weighted   + params:get("offset_"..i) end},
-  {"X1 UNWEIGHTED", function(i) crow.output[i].volts = x1_unweighted + params:get("offset_"..i) end},
-  {"Y1 WEIGHTED",   function(i) crow.output[i].volts = y1_weighted   + params:get("offset_"..i) end},
-  {"Y1 UNWEIGHTED", function(i) crow.output[i].volts = y1_unweighted + params:get("offset_"..i) end},
-  {"X2 WEIGHTED",   function(i) crow.output[i].volts = x2_weighted   + params:get("offset_"..i) end},
-  {"X2 UNWEIGHTED", function(i) crow.output[i].volts = x2_unweighted + params:get("offset_"..i) end},
-  {"Y2 WEIGHTED",   function(i) crow.output[i].volts = y2_weighted   + params:get("offset_"..i) end},
-  {"Y2 UNWEIGHTED", function(i) crow.output[i].volts = y2_unweighted + params:get("offset_"..i) end},
-  {"X3 WEIGHTED",   function(i) crow.output[i].volts = x3_weighted   + params:get("offset_"..i) end},
-  {"X3 UNWEIGHTED", function(i) crow.output[i].volts = x3_unweighted + params:get("offset_"..i) end},
-  {"Y3 WEIGHTED",   function(i) crow.output[i].volts = y3_weighted   + params:get("offset_"..i) end},
-  {"Y3 UNWEIGHTED", function(i) crow.output[i].volts = y3_unweighted + params:get("offset_"..i) end},
-  {"X4 WEIGHTED",   function(i) crow.output[i].volts = x4_weighted   + params:get("offset_"..i) end},
-  {"X4 UNWEIGHTED", function(i) crow.output[i].volts = x4_unweighted + params:get("offset_"..i) end},
-  {"Y4 WEIGHTED",   function(i) crow.output[i].volts = y4_weighted   + params:get("offset_"..i) end},
-  {"Y4 UNWEIGHTED", function(i) crow.output[i].volts = y4_unweighted + params:get("offset_"..i) end},
+  {"X1 WEIGHTED",   function() return x1_weighted   end}, 
+  {"X1 UNWEIGHTED", function() return x1_unweighted end},
+  {"Y1 WEIGHTED",   function() return y1_weighted   end},
+  {"Y1 UNWEIGHTED", function() return y1_unweighted end},
+  {"X2 WEIGHTED",   function() return x2_weighted   end},
+  {"X2 UNWEIGHTED", function() return x2_unweighted end},
+  {"Y2 WEIGHTED",   function() return y2_weighted   end},
+  {"Y2 UNWEIGHTED", function() return y2_unweighted end},
+  {"X3 WEIGHTED",   function() return x3_weighted   end},
+  {"X3 UNWEIGHTED", function() return x3_unweighted end},
+  {"Y3 WEIGHTED",   function() return y3_weighted   end},
+  {"Y3 UNWEIGHTED", function() return y3_unweighted end},
+  {"X4 WEIGHTED",   function() return x4_weighted   end},
+  {"X4 UNWEIGHTED", function() return x4_unweighted end},
+  {"Y4 WEIGHTED",   function() return y4_weighted   end},
+  {"Y4 UNWEIGHTED", function() return y4_unweighted end},
 }
 
 output_options.strings = {}
@@ -92,34 +94,15 @@ local input_state = {
 }
 
 function init()
-  local offset_controlspec = controlspec.new(0, 5, "lin", 0, 0, "v")
-  local offset_formatter   = function(p) return format_voltage(p:get(), 4) end
-  local refresh_controlspec = controlspec.new(25, 250, "exp", 1, 100, "hz")
-
-  params:add_separator("OUTPUT MODES")
-  params:add_option("out_1", "1:", output_options.strings, 3)
-  params:add_option("out_2", "2:", output_options.strings, 7)
-  params:add_option("out_3", "3:", output_options.strings, 11)
-  params:add_option("out_4", "4:", output_options.strings, 15)
-  params:add_separator("VOLTAGE OFFSETS")
-  params:add_control("offset_1", "1:", offset_controlspec, offset_formatter)
-  params:add_control("offset_2", "2:", offset_controlspec, offset_formatter)
-  params:add_control("offset_3", "3:", offset_controlspec, offset_formatter)
-  params:add_control("offset_4", "4:", offset_controlspec, offset_formatter)
-  params:add_separator("DISPLAY OPTIONS")
-  params:add_option("show_points", "SHOW POINT" , {"NONE", "WEIGHTED", "UNWEIGHTED"}, 2)
-  params:add_option("show_shapes", "SHOW SHAPES", {"NO", "YES"}, 2)
-  params:add_separator("AUDIO OPTIONS")
-  params:add_control("refresh_rate", "REFRESH RATE", refresh_controlspec)
-  params:set_action("refresh_rate", function(_) init_metros() end)
-
+  default_params = params:clone()
+  init_params()
   init_metros()
-
-  inject_param_method_extensions()
 end
 
 function cleanup()
-  uninject_param_method_extensions()
+  uninject_param_method_extensions(params)
+  params:clear()
+  params = default_params:clone()
 end
 
 function init_metros()
@@ -140,7 +123,94 @@ function init_metros()
   end
 end
 
+function init_midi_params()
+  if tab.count(midi.devices) <= 1 then return end
+  local c_spec    = controlspec.new(   0, 127, "lin", 1, 0, "")
+  local offset_cs = controlspec.new(-128, 128, "lin", 1, 0, "")
+  local formatter = function(p) return tostring(p:get()) end
+  params:add_separator("MIDI DEVICE OUTPUT")
+  for _, dev in pairs(midi.devices) do
+    if dev.id ~= 1 then -- id 1 = the virtual port
+      params:add_group(dev.name, 49)
+      params:add_binary(dev.name.."_on", "(on/off) toggle:", "toggle", 0)
+      for i=1, 16 do
+        local ch = "ch. "..i
+        params:add_option(dev.name.."_out_"..i, ch.." out:", output_options.strings, i)
+        params:add_control(dev.name.."_num_"..i, ch.." cc:", c_spec, formatter)
+        params:add_control(dev.name.."_offset_"..i, ch.." cc offset:", offset_cs, formatter)
+      end
+    end
+  end
+end
 
+function init_params()
+  local offset_cs  = controlspec.new( 0,   5, "lin", 0,   0, "v")
+  local refresh_cs = controlspec.new(25, 250, "exp", 1, 100, "hz")
+  local vformatter = function(p) return format_voltage(p:get(), 4) end
+  
+
+  params = default_params:clone()
+  inject_param_method_extensions(params)
+
+  params:add_separator("CROW OUTPUT MODES")
+  params:add_option("out_1", "1:", output_options.strings, 3)
+  params:add_option("out_2", "2:", output_options.strings, 7)
+  params:add_option("out_3", "3:", output_options.strings, 11)
+  params:add_option("out_4", "4:", output_options.strings, 15)
+  params:add_separator("CROW VOLTAGE OFFSETS")
+  params:add_control("offset_1", "1:", offset_cs, vformatter)
+  params:add_control("offset_2", "2:", offset_cs, vformatter)
+  params:add_control("offset_3", "3:", offset_cs, vformatter)
+  params:add_control("offset_4", "4:", offset_cs, vformatter)
+  
+  init_midi_params()
+  
+  params:add_separator("DISPLAY OPTIONS")
+  params:add_option("show_points", "SHOW POINT" , {"NONE", "WEIGHTED", "UNWEIGHTED"}, 2)
+  params:add_option("show_shapes", "SHOW SHAPES", {"NO", "YES"}, 2)
+  params:add_separator("AUDIO OPTIONS")
+  params:add_control("refresh_rate", "REFRESH RATE", refresh_cs)
+  params:set_action("refresh_rate", function(_) init_metros() end)
+end
+
+
+
+-- --------------------------------------
+-- MIDI functions
+-- --------------------------------------
+
+
+
+function midi.add(dev)
+  init_params()
+end
+
+function midi.remove(dev)
+  clock.run(
+    function()
+      clock.sleep(1)
+      midi:update_devices()
+      init_params()
+    end
+  )
+end
+
+function midi.output_ccs(dev)
+  local volt_range = controlspec.new(-5,   5, "lin", 0, 0, "volts")
+  local midi_range = controlspec.new( 0, 127, "lin", 1, 0, "value")
+  for ch=1, 16 do
+    local cc     = params:get(dev.name.."_num_"..ch)
+    local offset = params:get(dev.name.."_offset_"..ch)
+    local volts  = output_options.funcs[params:get(dev.name.."_out_"..ch)]()
+    local val    = midi_range:map(volt_range:unmap(volts)) + offset
+    dev:cc(cc, val, ch)
+  end
+  
+end
+
+function midi.is_outputting(dev)
+  return params:get(dev.name.."_on") == 1
+end
 
 -- --------------------------------------
 -- controller functions
@@ -334,10 +404,18 @@ function tick()
   calculate_weighted_values()
   calculate_unweighted_values()
 
-  output_options.funcs[params:get("out_1")](1)
-  output_options.funcs[params:get("out_2")](2)
-  output_options.funcs[params:get("out_3")](3)
-  output_options.funcs[params:get("out_4")](4)
+  for i=1, 4 do
+    local offset = params:get("offset_"..i)
+    local volts  = output_options.funcs[params:get("out_"..i)]()
+    crow.output[i].volts = volts + offset
+  end
+  for _, dev in pairs(midi.devices) do
+    if dev.id ~= 1 then
+      if dev:is_outputting() then
+        dev:output_ccs()
+      end
+    end
+  end
 end
 
 
@@ -506,12 +584,30 @@ function clone_function(fn)
   return cloned
 end
 
-function inject_param_method_extensions()
+function paramset:clone()
+  local p = paramset.new()
+  for index, param in pairs(self.params) do
+    p.params[index] = param
+  end
+  for index, state in pairs(self.hidden) do
+    p.hidden[index] = state
+  end
+  for id, index in pairs(self.lookup) do
+    p.lookup[id] = index
+  end
+  p.count = self.count
+  p.group = self.group
+  p.name = self.name
+  p.id = self.id
+  return p
+end
+
+function inject_param_method_extensions(pset)
   -- extend paramset:write()
-  if params.write2 == nil then
-    params.write2 = clone_function(params.write)
-    params.write = function(paramset, filename, name)
-      params:write2(filename, name)
+  if pset.write2 == nil then
+    pset.write2 = clone_function(pset.write)
+    pset.write = function(paramset, filename, name)
+      pset:write2(filename, name)
       if norns.state.name == "shapes" then
         tab.save(shapes, paths.this.data..filename..".data")
       end
@@ -519,10 +615,10 @@ function inject_param_method_extensions()
   end
 
   -- extend paramset:read()
-  if params.read2 == nil then
-    params.read2 = clone_function(params.read)
-    params.read = function(paramset, filename) 
-      params:read2(filename)
+  if pset.read2 == nil then
+    pset.read2 = clone_function(pset.read)
+    pset.read = function(paramset, filename) 
+      pset:read2(filename)
       if norns.state.name == "shapes" then
         load_shapes(paths.this.data..filename..".data")
       end
@@ -530,17 +626,17 @@ function inject_param_method_extensions()
   end
 end
 
-function uninject_param_method_extensions()
+function uninject_param_method_extensions(pset)
   -- reverse paramset:write() extension
-  if params.write2 ~= nil then
-    params.write  = clone_function(params.write2)
-    params.write2 = nil
+  if pset.write2 ~= nil then
+    pset.write  = clone_function(pset.write2)
+    pset.write2 = nil
   end
 
   -- reverse paramset:read() extension
-  if params.read2 ~= nil then
-    params.read   = clone_function(params.read2)
-    params.read2  = nil
+  if pset.read2 ~= nil then
+    pset.read   = clone_function(pset.read2)
+    pset.read2  = nil
   end
 end
 
