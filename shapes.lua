@@ -88,6 +88,11 @@ for i, _ in ipairs (output_options) do
   table.insert(output_options.funcs,   i, output_options[i][2])
 end
 
+output_values = {
+  midi  = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+  volts = {0, 0, 0, 0},
+}
+
 local input_state = {
   key   = {0, 0, 0}, -- key 1, 2, 3 : pressed or not pressed
   key_t = {0, 0, 0}, -- key 1, 2, 3 : time of last press
@@ -162,6 +167,7 @@ function init_params()
   params:add_separator("DISPLAY OPTIONS")
   params:add_option("show_points", "SHOW POINT" , {"NONE", "WEIGHTED", "UNWEIGHTED"}, 2)
   params:add_option("show_shapes", "SHOW SHAPES", {"NO", "YES"}, 2)
+  params:add_option("show_unit", "SHOW UNIT", {"MIDI", "VOLTS"}, 2)
   params:add_separator("AUDIO OPTIONS")
   params:add_control("refresh_rate", "REFRESH RATE", refresh_cs)
   params:set_action("refresh_rate", function(_) init_metros() end)
@@ -186,6 +192,7 @@ function midi.output_ccs(dev)
       local offset = params:get(dev.port.."_offset_"..ch)
       local volts  = output_options.funcs[params:get(dev.port.."_out_"..ch)]()
       local val    = midi_range:map(volt_range:unmap(volts)) + offset
+      output_values["midi"][ch] = val
       dev:cc(cc, val, ch)
     end
   end
@@ -388,11 +395,15 @@ function tick()
   for i=1, 4 do
     local offset = params:get("offset_"..i)
     local volts  = output_options.funcs[params:get("out_"..i)]()
+    output_values["volts"][i] = volts + offset
     crow.output[i].volts = volts + offset
   end
 end
 
 function midi_tick()
+  for i=1, 16 do
+    output_values["midi"][i] = (output_values["midi"][i] + 1) % 128
+  end
   for _, dev in pairs(midi.devices) do
     if dev.id ~= 1 then
         dev:output_ccs()
@@ -652,7 +663,7 @@ function redraw(c)
   screen.fill()
 
   -- (output voltage) shape side, weight
-  draw_crow_output_voltages_text()
+  draw_unit_output[params:get("show_unit")]()
   if partial_shape then
     if mode == "SIDES/LENGTH" or mode == "GROUP/WEIGHT" then
       draw_partial_shape_point_info_text((c+3) % 16)
@@ -722,14 +733,35 @@ function draw_bipolar_grid()
   screen.stroke()
 end
 
-function draw_crow_output_voltages_text()
+function draw_midi_output()
+  screen.level(15)
+  screen.font_face(1)
+  screen.move(0, 7)
+  screen.line_rel(29, 0)
+
+  screen.move(15, 5)
+  screen.text_center("MIDI")
+  screen.stroke()
+  for i=1, 16 do
+    screen.move(i*2 - 3, 33)
+    screen.line_rel(0, -(output_values["midi"][i]/128) * 25)
+    screen.stroke()
+  end
+end
+
+function draw_crow_output()
   screen.level(15)
   screen.font_face(2)
   for i=1, 4 do
     screen.move(0,i*8)
-    screen.text("("..format_voltage(crow.output[i].volts)..")   ")
+    screen.text("("..format_voltage(output_values["volts"][i])..")   ")
   end
 end
+
+draw_unit_output = {
+  draw_midi_output,
+  draw_crow_output,
+}
 
 function draw_focused_shape_point_info_text(brightness)
   screen.level(brightness)
